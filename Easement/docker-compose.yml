@@ -1,0 +1,36 @@
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    container_name: ezment-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ezment
+      POSTGRES_PASSWORD: ezment
+      POSTGRES_DB: ezment
+    ports:
+      - "5432:5432"
+    volumes:
+      - ezment_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ezment -d ezment"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: ezment-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - ezment_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  ezment_pgdata:
+  ezment_redis:

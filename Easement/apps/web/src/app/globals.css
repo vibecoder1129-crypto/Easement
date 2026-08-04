@@ -1,0 +1,293 @@
+@import "tailwindcss";
+
+:root, [data-theme="light"] {
+  --ease-bg: #fafbfe;
+  --ease-surface: #ffffff;
+  --ease-card-bg: #ffffff;
+  --ease-card-hover-border: #cbd5e1;
+  --ease-border: #e2e8f0;
+  --ease-text-main: #0f172a;
+  --ease-text-muted: #475569;
+  --ease-text-subtle: #94a3b8;
+  --ease-header-bg: rgba(255, 255, 255, 0.88);
+
+  --ease-mesh-gradient: 
+    radial-gradient(at 10% 10%, rgba(243, 240, 255, 0.9) 0px, transparent 50%),
+    radial-gradient(at 90% 15%, rgba(239, 246, 255, 0.9) 0px, transparent 50%),
+    radial-gradient(at 50% 60%, rgba(236, 253, 245, 0.8) 0px, transparent 55%),
+    radial-gradient(at 20% 90%, rgba(243, 240, 255, 0.8) 0px, transparent 50%);
+
+  /* Primary Brand Gradients matching the Logo */
+  --ease-grad-logo: linear-gradient(135deg, #6366f1 0%, #3b82f6 50%, #0d9488 100%);
+  --ease-grad-logo-hover: linear-gradient(135deg, #4f46e5 0%, #2563eb 50%, #0f766e 100%);
+
+  --background: var(--ease-bg);
+  --foreground: var(--ease-text-main);
+}
+
+.dark, [data-theme="dark"] {
+  --ease-bg: #0b0f19;
+  --ease-surface: #1a233a;
+  --ease-card-bg: #131c2e;
+  --ease-card-hover-border: #6366f1;
+  --ease-border: rgba(255, 255, 255, 0.16);
+  --ease-text-main: #ffffff;
+  --ease-text-muted: #cbd5e1;
+  --ease-text-subtle: #94a3b8;
+  --ease-header-bg: rgba(11, 15, 25, 0.92);
+
+  --ease-mesh-gradient: 
+    radial-gradient(at 15% 10%, rgba(99, 102, 241, 0.25) 0px, transparent 50%),
+    radial-gradient(at 85% 15%, rgba(6, 182, 212, 0.2) 0px, transparent 50%),
+    radial-gradient(at 50% 60%, rgba(16, 185, 129, 0.15) 0px, transparent 55%),
+    radial-gradient(at 20% 90%, rgba(99, 102, 241, 0.18) 0px, transparent 50%);
+
+  --background: var(--ease-bg);
+  --foreground: var(--ease-text-main);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-sans);
+}
+
+body {
+  background: var(--ease-bg);
+  color: var(--ease-text-main);
+  font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
+  overflow-x: hidden;
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+/* Ambient Background Mesh */
+.ease-mesh-pastel {
+  background-color: var(--ease-bg);
+  background-image: var(--ease-mesh-gradient);
+  background-attachment: fixed;
+}
+
+/* Logo-Matched Wordmark */
+.ease-wordmark-pastel {
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--ease-text-main);
+}
+
+.ease-wordmark-pastel .ment {
+  background: linear-gradient(120deg, #818cf8 0%, #60a5fa 45%, #34d399 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Clean Cards with Sharp Surface Separation */
+.ease-card-clean {
+  background: var(--ease-card-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--ease-border);
+  border-radius: 20px;
+  box-shadow: 0 8px 30px -4px rgba(0, 0, 0, 0.2);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.ease-card-clean:hover {
+  border-color: var(--ease-card-hover-border);
+  transform: translateY(-2px);
+  box-shadow: 0 16px 36px -4px rgba(0, 0, 0, 0.35);
+}
+
+/* Crisp Input Fields */
+.ease-input {
+  width: 100%;
+  border-radius: 14px;
+  border: 1px solid var(--ease-border);
+  background: var(--ease-surface);
+  color: var(--ease-text-main);
+  padding: 0.8rem 1.1rem;
+  font-size: 0.95rem;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.ease-input::placeholder {
+  color: var(--ease-text-subtle);
+}
+
+.ease-input:focus {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.25);
+}
+
+select.ease-input option {
+  background: var(--ease-surface);
+  color: var(--ease-text-main);
+}
+
+/* Primary Button with Logo Spectrum Gradient */
+.ease-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 9999px;
+  background: var(--ease-grad-logo);
+  color: #ffffff;
+  font-weight: 700;
+  padding: 0.8rem 1.8rem;
+  box-shadow: 0 6px 20px -2px rgba(99, 102, 241, 0.4);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.ease-btn-primary:hover {
+  transform: translateY(-1px);
+  background: var(--ease-grad-logo-hover);
+  box-shadow: 0 10px 25px -2px rgba(99, 102, 241, 0.55);
+}
+
+.ease-btn-primary:active {
+  transform: translateY(0);
+}
+
+.ease-btn-primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Secondary Button with High Contrast in Dark Mode */
+.ease-btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 9999px;
+  border: 1px solid var(--ease-border);
+  background: var(--ease-surface);
+  color: var(--ease-text-main);
+  font-weight: 600;
+  padding: 0.75rem 1.5rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transition: all 0.2s ease;
+}
+
+.ease-btn-secondary:hover {
+  border-color: var(--ease-card-hover-border);
+  background: var(--ease-card-bg);
+}
+
+/* Emblem Badge */
+.ease-emblem-badge {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 20px;
+  background: var(--ease-surface);
+  border: 1px solid var(--ease-border);
+  box-shadow: 0 8px 24px -4px rgba(99, 102, 241, 0.18);
+}
+
+/* Theme Slider Switch */
+.ease-theme-slider {
+  position: relative;
+  width: 60px;
+  height: 32px;
+  border-radius: 9999px;
+  background: var(--ease-surface);
+  padding: 3px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid var(--ease-border);
+  transition: background-color 0.25s ease;
+}
+
+.ease-theme-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 24px;
+  height: 24px;
+  border-radius: 9999px;
+  background: #ffffff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+}
+
+.dark .ease-theme-thumb {
+  transform: translateX(28px);
+  background: #1e293b;
+}
+
+/* High Contrast Badges in Light & Dark Mode */
+.ease-chip-lavender {
+  background: rgba(99, 102, 241, 0.12);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  color: #4f46e5;
+}
+
+.dark .ease-chip-lavender {
+  background: rgba(99, 102, 241, 0.22);
+  border: 1px solid rgba(99, 102, 241, 0.45);
+  color: #a5b4fc;
+}
+
+.ease-chip-blue {
+  background: rgba(59, 130, 246, 0.12);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  color: #1d4ed8;
+}
+
+.dark .ease-chip-blue {
+  background: rgba(59, 130, 246, 0.22);
+  border: 1px solid rgba(59, 130, 246, 0.45);
+  color: #93c5fd;
+}
+
+.ease-chip-mint {
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: #047857;
+}
+
+.dark .ease-chip-mint {
+  background: rgba(16, 185, 129, 0.22);
+  border: 1px solid rgba(16, 185, 129, 0.45);
+  color: #6ee7b7;
+}
+
+.ease-chip-interactive {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 1.1rem;
+  border-radius: 9999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  background: var(--ease-surface);
+  border: 1px solid var(--ease-border);
+  color: var(--ease-text-muted);
+  transition: all 0.2s ease;
+}
+
+.ease-chip-interactive:hover,
+.ease-chip-interactive.active {
+  background: rgba(99, 102, 241, 0.18);
+  border-color: rgba(99, 102, 241, 0.5);
+  color: #4f46e5;
+}
+
+.dark .ease-chip-interactive:hover,
+.dark .ease-chip-interactive.active {
+  background: rgba(99, 102, 241, 0.25);
+  color: #a5b4fc;
+}
+
+
