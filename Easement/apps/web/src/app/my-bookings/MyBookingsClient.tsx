@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppHeader } from "@/components/AppHeader";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { RescheduleModal } from "@/components/RescheduleModal";
 import { ReviewForm } from "@/components/ReviewForm";
 import { api } from "@/lib/api";
@@ -16,6 +17,7 @@ import {
   MyBooking,
   splitBookings,
 } from "@/lib/customer-bookings";
+import { formatDateTimeInZone } from "@/lib/datetime";
 
 type Me = { userId: string; name: string; email: string; role: string };
 
@@ -74,6 +76,8 @@ export default function MyBookingsClient() {
   const [actionId, setActionId] = useState<string | null>(null);
   const [reviewFor, setReviewFor] = useState<string | null>(null);
   const [rescheduleFor, setRescheduleFor] = useState<MyBooking | null>(null);
+  const [cancelId, setCancelId] = useState<string | null>(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
 
   async function load() {
     const list = await fetchMyBookings();
@@ -111,22 +115,20 @@ export default function MyBookingsClient() {
     };
   }, [router]);
 
-  async function cancelBooking(bookingId: string) {
-    if (
-      !window.confirm(
-        "Cancel this appointment? The time slot will open again for others.",
-      )
-    ) {
-      return;
-    }
-    setActionId(bookingId);
+  async function runCancel() {
+    if (!cancelId) return;
+    setConfirmBusy(true);
+    setActionId(cancelId);
     setError(null);
     try {
-      await cancelMyBooking(bookingId);
+      await cancelMyBooking(cancelId);
+      setCancelId(null);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not cancel");
+      setCancelId(null);
     } finally {
+      setConfirmBusy(false);
       setActionId(null);
     }
   }
@@ -160,6 +162,19 @@ export default function MyBookingsClient() {
         }
         onClose={() => setRescheduleFor(null)}
         onDone={load}
+      />
+      <ConfirmDialog
+        open={!!cancelId}
+        title="Cancel appointment?"
+        message="The time slot will open again for others."
+        confirmLabel="Cancel appointment"
+        cancelLabel="Keep it"
+        danger
+        busy={confirmBusy}
+        onClose={() => {
+          if (!confirmBusy) setCancelId(null);
+        }}
+        onConfirm={() => void runCancel()}
       />
       <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6">
         <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 mb-8">
@@ -214,7 +229,7 @@ export default function MyBookingsClient() {
                   <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
                     <div>
                       <div className="text-xs font-bold text-indigo-600">
-                        {new Date(b.startDatetime).toLocaleString()}
+                        {formatDateTimeInZone(b.startDatetime, b.timezone)}
                       </div>
                       <h3 className="font-bold text-lg mt-1">{b.serviceName}</h3>
                       <p className="text-sm text-[var(--ease-text-muted)] mt-1">
@@ -235,7 +250,7 @@ export default function MyBookingsClient() {
                     booking={b}
                     busy={actionId === b.bookingId}
                     onReschedule={() => setRescheduleFor(b)}
-                    onCancel={() => void cancelBooking(b.bookingId)}
+                    onCancel={() => setCancelId(b.bookingId)}
                   />
                 </div>
               ))}
@@ -261,7 +276,7 @@ export default function MyBookingsClient() {
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <div className="text-xs text-[var(--ease-text-subtle)]">
-                        {new Date(b.startDatetime).toLocaleString()}
+                        {formatDateTimeInZone(b.startDatetime, b.timezone)}
                       </div>
                       <div className="font-bold">
                         {b.serviceName} · {b.businessName}
@@ -280,7 +295,7 @@ export default function MyBookingsClient() {
                       booking={b}
                       busy={actionId === b.bookingId}
                       onReschedule={() => setRescheduleFor(b)}
-                      onCancel={() => void cancelBooking(b.bookingId)}
+                      onCancel={() => setCancelId(b.bookingId)}
                     />
                   )}
 

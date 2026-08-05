@@ -214,33 +214,33 @@ export default function OnboardingPage() {
                       name="lat"
                       type="number"
                       step="any"
-                      defaultValue={40.7128}
-                      required
-                      className="ease-input mt-1.5"
-                    />
-                  </label>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-                    Longitude
-                    <input
-                      name="lng"
-                      type="number"
-                      step="any"
-                      defaultValue={-74.006}
-                      required
-                      className="ease-input mt-1.5"
-                    />
-                  </label>
-                </div>
-
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-                  Timezone (IANA)
-                  <input
-                    name="timezone"
-                    defaultValue="America/New_York"
+                    defaultValue={56.9532}
                     required
                     className="ease-input mt-1.5"
                   />
                 </label>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+                  Longitude
+                  <input
+                    name="lng"
+                    type="number"
+                    step="any"
+                    defaultValue={24.1165}
+                    required
+                    className="ease-input mt-1.5"
+                  />
+                </label>
+              </div>
+
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+                Timezone (IANA)
+                <input
+                  name="timezone"
+                  defaultValue="Europe/Riga"
+                  required
+                  className="ease-input mt-1.5"
+                />
+              </label>
 
                 <button
                   type="submit"

@@ -33,6 +33,11 @@ enum PaymentMethod {
   card_in_person
 }
 
+enum BookingSource {
+  marketplace
+  owner
+}
+
 enum NotificationType {
   booking_confirmed
   booking_rescheduled
@@ -49,6 +54,8 @@ model User {
   passwordHash     String
   role             UserRole
   remindersEnabled Boolean  @default(true)
+  /// Bumped on password change to invalidate other sessions.
+  sessionVersion   Int      @default(0)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -81,6 +88,7 @@ model Business {
   sales     Sale[]
   reviews   Review[]
   favorites Favorite[]
+  googleCalendar GoogleCalendarConnection?
 
   @@index([ownerId])
 }
@@ -108,7 +116,10 @@ model Staff {
   id         String   @id @default(cuid())
   businessId String
   locationId String
-  userId     String
+  userId     String?
+  name       String
+  email      String?
+  phone      String?
   title      String
   photoUrl   String?
   createdAt  DateTime @default(now())
@@ -116,7 +127,7 @@ model Staff {
 
   business     Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
   location     Location       @relation(fields: [locationId], references: [id], onDelete: Cascade)
-  user         User           @relation(fields: [userId], references: [id])
+  user         User?          @relation(fields: [userId], references: [id])
   services     StaffService[]
   availability Availability[]
   timeOff      TimeOff[]
@@ -189,7 +200,7 @@ model TimeOff {
 
 model Booking {
   id            String        @id @default(cuid())
-  consumerId    String
+  consumerId    String?
   businessId    String
   locationId    String
   staffId       String
@@ -197,14 +208,19 @@ model Booking {
   startDatetime DateTime
   endDatetime   DateTime
   status        BookingStatus @default(confirmed)
+  source        BookingSource @default(marketplace)
   price         Float
   notes         String?
+  guestName     String?
+  guestEmail    String?
+  guestPhone    String?
+  googleEventId String?
   reminderAt    DateTime?
   reminderSentAt DateTime?
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
-  consumer User     @relation("ConsumerBookings", fields: [consumerId], references: [id])
+  consumer User?    @relation("ConsumerBookings", fields: [consumerId], references: [id])
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
   location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
   staff    Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
@@ -217,6 +233,22 @@ model Booking {
   @@index([locationId])
   @@index([staffId])
   @@index([startDatetime, endDatetime])
+}
+
+model GoogleCalendarConnection {
+  id           String   @id @default(cuid())
+  businessId   String   @unique
+  refreshToken String
+  accessToken  String?
+  accessTokenExpiresAt DateTime?
+  calendarId   String   @default("primary")
+  connectedEmail String?
+  status       String   @default("active")
+  lastError    String?
+  connectedAt  DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
 }
 
 model TaxRate {

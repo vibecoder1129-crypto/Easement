@@ -5,11 +5,12 @@ import { FormEvent, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AppHeader } from "@/components/AppHeader";
 import { api } from "@/lib/api";
+import { safeNextPath } from "@/lib/safe-next";
 
 export default function SignupClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const next = searchParams.get("next");
+  const next = safeNextPath(searchParams.get("next"));
   const defaultRole = next ? "consumer" : "business_owner";
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -30,10 +31,11 @@ export default function SignupClient() {
           role: form.get("role"),
         }),
       });
-      if (next) {
-        router.push(next);
-      } else if (result.role === "business_owner") {
+      // Owners always finish onboarding first, even if a next path was provided.
+      if (result.role === "business_owner") {
         router.push("/onboarding");
+      } else if (next) {
+        router.push(next);
       } else {
         router.push("/home");
       }

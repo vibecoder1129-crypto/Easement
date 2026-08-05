@@ -5,11 +5,12 @@ import { FormEvent, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AppHeader } from "@/components/AppHeader";
 import { api } from "@/lib/api";
+import { safeNextPath } from "@/lib/safe-next";
 
 export default function LoginClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const next = searchParams.get("next");
+  const next = safeNextPath(searchParams.get("next"));
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 

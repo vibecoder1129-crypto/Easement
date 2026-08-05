@@ -20,7 +20,32 @@ import {
   UpdatePreferencesDto,
   UpdateProfileDto,
 } from './dto/auth.dto';
-import { SessionAuthGuard } from './session-auth.guard';
+import { SessionAuthGuard, type SessionUser } from './session-auth.guard';
+
+function regenerateSession(req: Request): Promise<void> {
+  return new Promise((resolve, reject) => {
+    req.session.regenerate((err) => {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
+}
+
+function toSessionUser(user: {
+  userId: string;
+  role: string;
+  name: string;
+  email: string;
+  sessionVersion: number;
+}): SessionUser {
+  return {
+    userId: user.userId,
+    role: user.role,
+    name: user.name,
+    email: user.email,
+    sessionVersion: user.sessionVersion,
+  };
+}
 
 @Controller('auth')
 export class AuthController {
@@ -31,7 +56,8 @@ export class AuthController {
   async signup(@Body() dto: SignupDto, @Req() req: Request) {
     const result = await this.authService.signup(dto);
     const me = await this.authService.getMe(result.userId);
-    req.session.user = me;
+    await regenerateSession(req);
+    req.session.user = toSessionUser(me);
     return result;
   }
 
@@ -40,7 +66,8 @@ export class AuthController {
   @Throttle({ default: { limit: 10, ttl: 60000 } })
   async login(@Body() dto: LoginDto, @Req() req: Request) {
     const user = await this.authService.validateLogin(dto);
-    req.session.user = user;
+    await regenerateSession(req);
+    req.session.user = toSessionUser(user);
     return { userId: user.userId, role: user.role };
   }
 
@@ -72,10 +99,7 @@ export class AuthController {
       req.session.user!.userId,
       dto,
     );
-    req.session.user = {
-      ...req.session.user!,
-      ...me,
-    };
+    req.session.user = toSessionUser(me);
     return me;
   }
 
@@ -86,12 +110,7 @@ export class AuthController {
       req.session.user!.userId,
       dto,
     );
-    req.session.user = {
-      userId: me.userId,
-      role: me.role,
-      name: me.name,
-      email: me.email,
-    };
+    req.session.user = toSessionUser(me);
     return me;
   }
 
@@ -99,7 +118,12 @@ export class AuthController {
   @UseGuards(SessionAuthGuard)
   @Throttle({ default: { limit: 10, ttl: 60000 } })
   async changePassword(@Body() dto: ChangePasswordDto, @Req() req: Request) {
-    return this.authService.changePassword(req.session.user!.userId, dto);
+    const userId = req.session.user!.userId;
+    const result = await this.authService.changePassword(userId, dto);
+    const me = await this.authService.getMe(userId);
+    await regenerateSession(req);
+    req.session.user = toSessionUser(me);
+    return result;
   }
 
   @Delete('account')

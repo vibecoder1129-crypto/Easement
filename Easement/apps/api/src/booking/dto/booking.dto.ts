@@ -3,6 +3,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  Max,
   Min,
   MinLength,
 } from 'class-validator';
@@ -24,6 +25,10 @@ export class GetSlotsDto {
   @IsOptional()
   @IsString()
   staffId?: string;
+
+  @IsOptional()
+  @IsString()
+  locationId?: string;
 }
 
 export class CreateBookingDto {
@@ -65,11 +70,80 @@ export class CompleteBookingDto {
 export class CreateReviewDto {
   @IsNumber()
   @Min(1)
+  @Max(5)
   rating!: number;
 
   @IsOptional()
   @IsString()
   comment?: string;
+}
+
+export class CreateOwnerBookingDto {
+  @IsString()
+  @MinLength(1)
+  locationId!: string;
+
+  @IsString()
+  @MinLength(1)
+  serviceId!: string;
+
+  @IsString()
+  @MinLength(1)
+  staffId!: string;
+
+  @IsString()
+  @MinLength(10)
+  startDatetime!: string;
+
+  @IsString()
+  @MinLength(1)
+  guestName!: string;
+
+  @IsOptional()
+  @IsString()
+  guestEmail?: string;
+
+  @IsOptional()
+  @IsString()
+  guestPhone?: string;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
+}
+
+export class UpdateOwnerBookingDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(10)
+  startDatetime?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  staffId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  serviceId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  guestName?: string;
+
+  @IsOptional()
+  @IsString()
+  guestEmail?: string;
+
+  @IsOptional()
+  @IsString()
+  guestPhone?: string;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
 }
 
 export class RescheduleBookingDto {

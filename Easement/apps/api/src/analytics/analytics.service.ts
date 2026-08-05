@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { BookingStatus, UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { staffDisplayName } from '../business/staff.util';
 
 @Injectable()
 export class AnalyticsService {
@@ -70,6 +71,9 @@ export class AnalyticsService {
     const cancelledAppointments = bookings.filter(
       (b) => b.status === BookingStatus.cancelled,
     ).length;
+    const noShowAppointments = bookings.filter(
+      (b) => b.status === BookingStatus.no_show,
+    ).length;
 
     const averageTicketSize =
       completedAppointments > 0 ? totalRevenue / completedAppointments : 0;
@@ -92,7 +96,7 @@ export class AnalyticsService {
 
       return {
         staffId: staff.id,
-        staffName: staff.user.name,
+        staffName: staffDisplayName(staff),
         title: staff.title,
         totalAppointments: staffTotalAppts,
         completedAppointments: staffCompletedAppts,
@@ -130,6 +134,7 @@ export class AnalyticsService {
         totalAppointments,
         completedAppointments,
         cancelledAppointments,
+        noShowAppointments,
         averageTicketSize: Number(averageTicketSize.toFixed(2)),
       },
       performanceByEmployee,

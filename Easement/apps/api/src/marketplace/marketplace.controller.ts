@@ -1,4 +1,5 @@
 import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { GetSlotsDto } from '../booking/dto/booking.dto';
 import { BookingService } from '../booking/booking.service';
 import { MarketplaceService } from './marketplace.service';
@@ -25,6 +26,7 @@ export class MarketplaceController {
   }
 
   @Get('slots')
+  @Throttle({ default: { limit: 40, ttl: 60000 } })
   getSlots(@Query() query: GetSlotsDto) {
     return this.bookings.getAvailableSlots(query);
   }

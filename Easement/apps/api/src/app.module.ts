@@ -8,6 +8,7 @@ import { AuthModule } from './auth/auth.module';
 import { BookingModule } from './booking/booking.module';
 import { BusinessModule } from './business/business.module';
 import { FavoritesModule } from './favorites/favorites.module';
+import { GoogleCalendarModule } from './google-calendar/google-calendar.module';
 import { MailModule } from './mail/mail.module';
 import { MarketplaceModule } from './marketplace/marketplace.module';
 import { NotificationsModule } from './notifications/notifications.module';
@@ -27,6 +28,7 @@ import { PrismaModule } from './prisma/prisma.module';
     AuthModule,
     BusinessModule,
     BookingModule,
+    GoogleCalendarModule,
     AnalyticsModule,
     MarketplaceModule,
     FavoritesModule,

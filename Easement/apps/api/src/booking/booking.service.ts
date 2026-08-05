@@ -2,10 +2,13 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
+  forwardRef,
 } from '@nestjs/common';
 import {
+  BookingSource,
   BookingStatus,
   BusinessStatus,
   NotificationType,
@@ -13,20 +16,31 @@ import {
   Prisma,
   UserRole,
 } from '@prisma/client';
+import { staffDisplayName } from '../business/staff.util';
+import { GoogleCalendarService } from '../google-calendar/google-calendar.service';
 import { MailService } from '../mail/mail.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import {
-  CompleteBookingDto,
-  CreateBookingDto,
-  CreateReviewDto,
-  GetSlotsDto,
-} from './dto/booking.dto';
+  bookingAbuseLimits,
+  maxAdvanceMs,
+} from './booking-abuse.util';
+import { SLOT_BLOCKING_STATUSES } from './booking-status.util';
 import {
+  formatDateTimeInZone,
   formatHmInZone,
   getZonedParts,
   zonedWallTimeToUtc,
+  DEFAULT_VENUE_TIMEZONE,
 } from './timezone.util';
+import {
+  CompleteBookingDto,
+  CreateBookingDto,
+  CreateOwnerBookingDto,
+  CreateReviewDto,
+  GetSlotsDto,
+  UpdateOwnerBookingDto,
+} from './dto/booking.dto';
 
 function isExclusionConflict(err: unknown): boolean {
   if (err instanceof Prisma.PrismaClientKnownRequestError) {
@@ -46,6 +60,8 @@ export class BookingService {
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     private readonly mail: MailService,
+    @Inject(forwardRef(() => GoogleCalendarService))
+    private readonly googleCalendar: GoogleCalendarService,
   ) {}
 
   async getAvailableSlots(dto: GetSlotsDto) {
@@ -71,9 +87,29 @@ export class BookingService {
     const primaryLocation = await this.prisma.location.findFirst({
       where: { businessId },
       orderBy: { createdAt: 'asc' },
-      select: { timezone: true },
+      select: { id: true, timezone: true },
     });
-    const timeZone = primaryLocation?.timezone || 'UTC';
+
+    // Prefer explicit location, else staff home location, else primary business location.
+    let timeZone = primaryLocation?.timezone || DEFAULT_VENUE_TIMEZONE;
+    if (dto.locationId) {
+      const loc = await this.prisma.location.findFirst({
+        where: { id: dto.locationId, businessId },
+        select: { timezone: true },
+      });
+      if (!loc) {
+        throw new BadRequestException('Location does not belong to this business');
+      }
+      timeZone = loc.timezone || DEFAULT_VENUE_TIMEZONE;
+    } else if (staffId) {
+      const staffLoc = await this.prisma.staff.findFirst({
+        where: { id: staffId, businessId },
+        include: { location: { select: { timezone: true } } },
+      });
+      if (staffLoc?.location?.timezone) {
+        timeZone = staffLoc.location.timezone;
+      }
+    }
 
     // Determine target staff members
     let candidateStaff = service.staff.map((st) => st.staff);
@@ -149,7 +185,7 @@ export class BookingService {
       const existingBookings = await this.prisma.booking.findMany({
         where: {
           staffId: staff.id,
-          status: { not: BookingStatus.cancelled },
+          status: { in: SLOT_BLOCKING_STATUSES },
           startDatetime: { lte: dayEnd },
           endDatetime: { gte: dayStart },
         },
@@ -189,7 +225,7 @@ export class BookingService {
           startDatetime: slotStartDate.toISOString(),
           endDatetime: slotEndDate.toISOString(),
           staffId: staff.id,
-          staffName: staff.user.name,
+          staffName: staffDisplayName(staff),
         });
       }
     }
@@ -218,6 +254,55 @@ export class BookingService {
       );
     }
 
+    const limits = bookingAbuseLimits();
+    const advanceLimit = Date.now() + maxAdvanceMs(limits.maxAdvanceDays);
+    if (start.getTime() > advanceLimit) {
+      throw new BadRequestException(
+        `You can only book up to ${limits.maxAdvanceDays} days ahead.`,
+      );
+    }
+
+    const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    const createsLastHour = await this.prisma.booking.count({
+      where: {
+        consumerId,
+        createdAt: { gte: hourAgo },
+      },
+    });
+    if (createsLastHour >= limits.maxCreatesPerHour) {
+      throw new BadRequestException(
+        'Too many bookings created recently. Please try again later.',
+      );
+    }
+
+    const upcomingWhere = {
+      consumerId,
+      status: {
+        in: [BookingStatus.confirmed, BookingStatus.pending],
+      },
+      startDatetime: { gt: new Date() },
+    };
+    const upcomingTotal = await this.prisma.booking.count({
+      where: upcomingWhere,
+    });
+    if (upcomingTotal >= limits.maxUpcoming) {
+      throw new BadRequestException(
+        `You already have ${limits.maxUpcoming} upcoming appointments. Cancel or finish one before booking more.`,
+      );
+    }
+
+    const upcomingAtBusiness = await this.prisma.booking.count({
+      where: {
+        ...upcomingWhere,
+        businessId,
+      },
+    });
+    if (upcomingAtBusiness >= limits.maxUpcomingPerBusiness) {
+      throw new BadRequestException(
+        `You already have ${limits.maxUpcomingPerBusiness} upcoming appointments at this venue.`,
+      );
+    }
+
     const business = await this.prisma.business.findUnique({
       where: { id: businessId },
       select: { status: true },
@@ -238,7 +323,65 @@ export class BookingService {
       throw new NotFoundException('Service not found for this business');
     }
 
+    const location = await this.prisma.location.findFirst({
+      where: { id: locationId, businessId },
+      select: { id: true, timezone: true },
+    });
+    if (!location) {
+      throw new BadRequestException('Location does not belong to this business');
+    }
+
+    const staff = await this.prisma.staff.findFirst({
+      where: { id: staffId, businessId },
+      select: { id: true },
+    });
+    if (!staff) {
+      throw new BadRequestException('Staff does not belong to this business');
+    }
+
+    const assignedCount = await this.prisma.staffService.count({
+      where: { serviceId },
+    });
+    if (assignedCount > 0) {
+      const assigned = await this.prisma.staffService.findFirst({
+        where: { serviceId, staffId },
+      });
+      if (!assigned) {
+        throw new BadRequestException(
+          'This staff member is not assigned to that service',
+        );
+      }
+    }
+
     const end = new Date(start.getTime() + service.durationMinutes * 60 * 1000);
+    const timeZone = location.timezone || DEFAULT_VENUE_TIMEZONE;
+    const startParts = getZonedParts(start, timeZone);
+    const endParts = getZonedParts(end, timeZone);
+    const availability = await this.prisma.availability.findFirst({
+      where: { staffId, dayOfWeek: startParts.dayOfWeek },
+    });
+    if (!availability) {
+      throw new BadRequestException('Staff is not available on that day');
+    }
+    const [availStartH, availStartM] = availability.startTime
+      .split(':')
+      .map(Number);
+    const [availEndH, availEndM] = availability.endTime.split(':').map(Number);
+    const startMinutes = startParts.hour * 60 + startParts.minute;
+    const endMinutes = endParts.hour * 60 + endParts.minute;
+    const availStartMinutes = availStartH * 60 + availStartM;
+    const availEndMinutes = availEndH * 60 + availEndM;
+    if (
+      startParts.year !== endParts.year ||
+      startParts.month !== endParts.month ||
+      startParts.day !== endParts.day ||
+      startMinutes < availStartMinutes ||
+      endMinutes > availEndMinutes
+    ) {
+      throw new BadRequestException(
+        'That time is outside the staff working hours',
+      );
+    }
 
     let result: {
       bookingId: string;
@@ -261,7 +404,7 @@ export class BookingService {
         const conflict = await tx.booking.findFirst({
           where: {
             staffId,
-            status: { not: BookingStatus.cancelled },
+            status: { in: SLOT_BLOCKING_STATUSES },
             startDatetime: { lt: end },
             endDatetime: { gt: start },
           },
@@ -306,6 +449,7 @@ export class BookingService {
             endDatetime: end,
             price: service.price,
             status: BookingStatus.confirmed,
+            source: BookingSource.marketplace,
             notes,
             reminderAt:
               reminderAt && reminderAt.getTime() > Date.now() ? reminderAt : null,
@@ -330,9 +474,9 @@ export class BookingService {
           businessName: booking.business.name,
           locationName: booking.location.name,
           serviceName: booking.service.name,
-          staffName: booking.staff.user.name,
-          clientName: booking.consumer.name,
-          clientEmail: booking.consumer.email,
+          staffName: staffDisplayName(booking.staff),
+          clientName: booking.consumer!.name,
+          clientEmail: booking.consumer!.email,
         };
       });
     } catch (err) {
@@ -345,8 +489,11 @@ export class BookingService {
       throw err;
     }
 
-    const when = new Date(result.startDatetime).toLocaleString();
-    const confirmBody = `${result.serviceName} at ${result.businessName} with ${result.staffName} on ${when}. Pay at the venue.`;
+    const whenVenue = formatDateTimeInZone(
+      new Date(result.startDatetime),
+      timeZone,
+    );
+    const confirmBody = `${result.serviceName} at ${result.businessName} with ${result.staffName} on ${whenVenue} (${timeZone}). Pay at the venue.`;
 
     await this.notifications.create({
       userId: consumerId,
@@ -368,7 +515,9 @@ export class BookingService {
         console.error('Confirmation email failed', err);
       });
 
-    return result;
+    void this.googleCalendar.syncBookingSafe(result.bookingId);
+
+    return { ...result, timeZone };
   }
 
   async getConsumerBookings(consumerId: string) {
@@ -376,7 +525,7 @@ export class BookingService {
       where: { consumerId },
       include: {
         business: { select: { id: true, name: true, category: true } },
-        location: { select: { name: true, address: true } },
+        location: { select: { name: true, address: true, timezone: true } },
         service: { select: { name: true, durationMinutes: true } },
         staff: { include: { user: { select: { name: true } } } },
         review: true,
@@ -394,10 +543,11 @@ export class BookingService {
       businessName: b.business.name,
       businessCategory: b.business.category,
       locationName: b.location.name,
+      timezone: b.location.timezone,
       serviceId: b.serviceId,
       serviceName: b.service.name,
       staffId: b.staffId,
-      staffName: b.staff.user.name,
+      staffName: staffDisplayName(b.staff),
       hasReview: !!b.review,
       reviewRating: b.review?.rating,
       reminderAt: b.reminderAt?.toISOString() ?? null,
@@ -441,7 +591,7 @@ export class BookingService {
         consumer: { select: { id: true, name: true, email: true, phone: true } },
         service: { select: { id: true, name: true, durationMinutes: true } },
         staff: { include: { user: { select: { name: true } } } },
-        location: { select: { id: true, name: true } },
+        location: { select: { id: true, name: true, timezone: true } },
         sale: true,
       },
       orderBy: { startDatetime: 'asc' },
@@ -450,15 +600,16 @@ export class BookingService {
     return bookings.map((b) => ({
       bookingId: b.id,
       status: b.status,
+      source: b.source,
       startDatetime: b.startDatetime.toISOString(),
       endDatetime: b.endDatetime.toISOString(),
       price: b.price,
       notes: b.notes,
       client: {
-        id: b.consumer.id,
-        name: b.consumer.name,
-        email: b.consumer.email,
-        phone: b.consumer.phone,
+        id: b.consumer?.id ?? null,
+        name: b.consumer?.name ?? b.guestName ?? 'Walk-in guest',
+        email: b.consumer?.email ?? b.guestEmail ?? '',
+        phone: b.consumer?.phone ?? b.guestPhone ?? undefined,
       },
       service: {
         id: b.service.id,
@@ -467,12 +618,14 @@ export class BookingService {
       },
       staff: {
         id: b.staff.id,
-        name: b.staff.user.name,
+        name: staffDisplayName(b.staff),
       },
       location: {
         id: b.location.id,
         name: b.location.name,
+        timezone: b.location.timezone,
       },
+      timezone: b.location.timezone,
       sale: b.sale
         ? {
             saleId: b.sale.id,
@@ -482,6 +635,293 @@ export class BookingService {
           }
         : null,
     }));
+  }
+
+  async createOwnerBooking(
+    businessId: string,
+    ownerId: string,
+    dto: CreateOwnerBookingDto,
+  ) {
+    const business = await this.prisma.business.findUnique({
+      where: { id: businessId },
+      select: { id: true, ownerId: true, status: true, name: true },
+    });
+    if (!business) throw new NotFoundException('Business not found');
+    if (business.ownerId !== ownerId) {
+      throw new ForbiddenException('Not allowed to create bookings for this business');
+    }
+    if (business.status !== BusinessStatus.approved) {
+      throw new BadRequestException('Business must be approved to take bookings');
+    }
+
+    const start = new Date(dto.startDatetime);
+    if (isNaN(start.getTime())) {
+      throw new BadRequestException('Invalid startDatetime');
+    }
+
+    const service = await this.prisma.service.findFirst({
+      where: { id: dto.serviceId, businessId },
+    });
+    if (!service) {
+      throw new NotFoundException('Service not found for this business');
+    }
+
+    const location = await this.prisma.location.findFirst({
+      where: { id: dto.locationId, businessId },
+      select: { id: true, timezone: true },
+    });
+    if (!location) {
+      throw new BadRequestException('Location does not belong to this business');
+    }
+
+    const staff = await this.prisma.staff.findFirst({
+      where: { id: dto.staffId, businessId },
+      select: { id: true },
+    });
+    if (!staff) {
+      throw new BadRequestException('Staff does not belong to this business');
+    }
+
+    const assignedCount = await this.prisma.staffService.count({
+      where: { serviceId: dto.serviceId },
+    });
+    if (assignedCount > 0) {
+      const assigned = await this.prisma.staffService.findFirst({
+        where: { serviceId: dto.serviceId, staffId: dto.staffId },
+      });
+      if (!assigned) {
+        throw new BadRequestException(
+          'This staff member is not assigned to that service',
+        );
+      }
+    }
+
+    const end = new Date(start.getTime() + service.durationMinutes * 60 * 1000);
+    const timeZone = location.timezone || DEFAULT_VENUE_TIMEZONE;
+    await this.assertStaffAvailable(dto.staffId, start, end, timeZone);
+
+    try {
+      const booking = await this.prisma.$transaction(async (tx) => {
+        await this.assertNoConflict(tx, dto.staffId, start, end);
+
+        return tx.booking.create({
+          data: {
+            consumerId: null,
+            businessId,
+            locationId: dto.locationId,
+            serviceId: dto.serviceId,
+            staffId: dto.staffId,
+            startDatetime: start,
+            endDatetime: end,
+            price: service.price,
+            status: BookingStatus.confirmed,
+            source: BookingSource.owner,
+            guestName: dto.guestName.trim(),
+            guestEmail: dto.guestEmail?.trim() || null,
+            guestPhone: dto.guestPhone?.trim() || null,
+            notes: dto.notes?.trim() || null,
+            reminderAt: null,
+          },
+          include: {
+            service: { select: { name: true } },
+            staff: { include: { user: { select: { name: true } } } },
+            location: { select: { timezone: true } },
+          },
+        });
+      });
+
+      void this.googleCalendar.syncBookingSafe(booking.id);
+
+      return {
+        bookingId: booking.id,
+        status: booking.status,
+        source: booking.source,
+        startDatetime: booking.startDatetime.toISOString(),
+        endDatetime: booking.endDatetime.toISOString(),
+        price: booking.price,
+        client: {
+          name: booking.guestName ?? 'Walk-in guest',
+          email: booking.guestEmail ?? '',
+          phone: booking.guestPhone ?? undefined,
+        },
+        service: { name: booking.service.name },
+        staff: { id: booking.staffId, name: staffDisplayName(booking.staff) },
+        timezone: booking.location.timezone,
+      };
+    } catch (err) {
+      if (err instanceof ConflictException || err instanceof BadRequestException) {
+        throw err;
+      }
+      if (isExclusionConflict(err)) {
+        throw new ConflictException('This time slot is already booked');
+      }
+      throw err;
+    }
+  }
+
+  async updateOwnerBooking(
+    bookingId: string,
+    ownerId: string,
+    dto: UpdateOwnerBookingDto,
+  ) {
+    const booking = await this.prisma.booking.findUnique({
+      where: { id: bookingId },
+      include: {
+        business: { select: { ownerId: true } },
+        service: true,
+        location: { select: { id: true, timezone: true, businessId: true } },
+      },
+    });
+    if (!booking) throw new NotFoundException('Booking not found');
+    if (booking.business.ownerId !== ownerId) {
+      throw new ForbiddenException('Not allowed to edit this booking');
+    }
+    if (
+      booking.status === BookingStatus.cancelled ||
+      booking.status === BookingStatus.completed ||
+      booking.status === BookingStatus.no_show
+    ) {
+      throw new BadRequestException(
+        `Cannot edit a booking with status "${booking.status}"`,
+      );
+    }
+
+    const staffId = dto.staffId ?? booking.staffId;
+    const serviceId = dto.serviceId ?? booking.serviceId;
+    const start = dto.startDatetime
+      ? new Date(dto.startDatetime)
+      : booking.startDatetime;
+    if (isNaN(start.getTime())) {
+      throw new BadRequestException('Invalid startDatetime');
+    }
+
+    const service = await this.prisma.service.findFirst({
+      where: { id: serviceId, businessId: booking.businessId },
+    });
+    if (!service) throw new NotFoundException('Service not found');
+
+    const staff = await this.prisma.staff.findFirst({
+      where: { id: staffId, businessId: booking.businessId },
+    });
+    if (!staff) throw new BadRequestException('Staff does not belong to this business');
+
+    const end = new Date(start.getTime() + service.durationMinutes * 60 * 1000);
+    const timeZone = booking.location.timezone || DEFAULT_VENUE_TIMEZONE;
+    await this.assertStaffAvailable(staffId, start, end, timeZone);
+
+    try {
+      const updated = await this.prisma.$transaction(async (tx) => {
+        await this.assertNoConflict(tx, staffId, start, end, bookingId);
+
+        return tx.booking.update({
+          where: { id: bookingId },
+          data: {
+            staffId,
+            serviceId,
+            startDatetime: start,
+            endDatetime: end,
+            price: service.price,
+            guestName:
+              dto.guestName !== undefined
+                ? dto.guestName.trim()
+                : booking.guestName,
+            guestEmail:
+              dto.guestEmail !== undefined
+                ? dto.guestEmail.trim() || null
+                : booking.guestEmail,
+            guestPhone:
+              dto.guestPhone !== undefined
+                ? dto.guestPhone.trim() || null
+                : booking.guestPhone,
+            notes:
+              dto.notes !== undefined ? dto.notes.trim() || null : booking.notes,
+          },
+        });
+      });
+
+      void this.googleCalendar.syncBookingSafe(updated.id);
+
+      return {
+        bookingId: updated.id,
+        status: updated.status,
+        startDatetime: updated.startDatetime.toISOString(),
+        endDatetime: updated.endDatetime.toISOString(),
+      };
+    } catch (err) {
+      if (err instanceof ConflictException || err instanceof BadRequestException) {
+        throw err;
+      }
+      if (isExclusionConflict(err)) {
+        throw new ConflictException('This time slot is already booked');
+      }
+      throw err;
+    }
+  }
+
+  private async assertNoConflict(
+    tx: Prisma.TransactionClient,
+    staffId: string,
+    start: Date,
+    end: Date,
+    excludeBookingId?: string,
+  ) {
+    const conflict = await tx.booking.findFirst({
+      where: {
+        staffId,
+        id: excludeBookingId ? { not: excludeBookingId } : undefined,
+        status: { in: SLOT_BLOCKING_STATUSES },
+        startDatetime: { lt: end },
+        endDatetime: { gt: start },
+      },
+    });
+    if (conflict) {
+      throw new ConflictException('This time slot is already booked');
+    }
+    const timeOff = await tx.timeOff.findFirst({
+      where: {
+        staffId,
+        startDatetime: { lt: end },
+        endDatetime: { gt: start },
+      },
+    });
+    if (timeOff) {
+      throw new ConflictException('Staff member is on time off at this time');
+    }
+  }
+
+  private async assertStaffAvailable(
+    staffId: string,
+    start: Date,
+    end: Date,
+    timeZone: string,
+  ) {
+    const startParts = getZonedParts(start, timeZone);
+    const endParts = getZonedParts(end, timeZone);
+    const availability = await this.prisma.availability.findFirst({
+      where: { staffId, dayOfWeek: startParts.dayOfWeek },
+    });
+    if (!availability) {
+      throw new BadRequestException('Staff is not available on that day');
+    }
+    const [availStartH, availStartM] = availability.startTime
+      .split(':')
+      .map(Number);
+    const [availEndH, availEndM] = availability.endTime.split(':').map(Number);
+    const startMinutes = startParts.hour * 60 + startParts.minute;
+    const endMinutes = endParts.hour * 60 + endParts.minute;
+    const availStartMinutes = availStartH * 60 + availStartM;
+    const availEndMinutes = availEndH * 60 + availEndM;
+    if (
+      startParts.year !== endParts.year ||
+      startParts.month !== endParts.month ||
+      startParts.day !== endParts.day ||
+      startMinutes < availStartMinutes ||
+      endMinutes > availEndMinutes
+    ) {
+      throw new BadRequestException(
+        'That time is outside the staff working hours',
+      );
+    }
   }
 
   async cancelBooking(bookingId: string, userId: string, userRole: string) {
@@ -500,6 +940,16 @@ export class BookingService {
 
     if (!isConsumer && !isOwner && !isAdmin) {
       throw new ForbiddenException('Not authorized to cancel this booking');
+    }
+
+    if (
+      booking.status === BookingStatus.cancelled ||
+      booking.status === BookingStatus.completed ||
+      booking.status === BookingStatus.no_show
+    ) {
+      throw new BadRequestException(
+        `Cannot cancel a booking with status "${booking.status}"`,
+      );
     }
 
     const updated = await this.prisma.booking.update({
@@ -524,6 +974,8 @@ export class BookingService {
         bookingId: updated.id,
       });
     }
+
+    void this.googleCalendar.syncBookingSafe(updated.id);
 
     return { bookingId: updated.id, status: updated.status };
   }
@@ -563,10 +1015,71 @@ export class BookingService {
       throw new BadRequestException('Choose a future time');
     }
 
+    const limits = bookingAbuseLimits();
+    const advanceLimit = Date.now() + maxAdvanceMs(limits.maxAdvanceDays);
+    if (start.getTime() > advanceLimit) {
+      throw new BadRequestException(
+        `You can only book up to ${limits.maxAdvanceDays} days ahead.`,
+      );
+    }
+
     const staffId = dto.staffId ?? booking.staffId;
     const end = new Date(
       start.getTime() + booking.service.durationMinutes * 60 * 1000,
     );
+
+    const staff = await this.prisma.staff.findFirst({
+      where: { id: staffId, businessId: booking.businessId },
+      select: { id: true },
+    });
+    if (!staff) {
+      throw new BadRequestException('Staff does not belong to this business');
+    }
+
+    const assignedCount = await this.prisma.staffService.count({
+      where: { serviceId: booking.serviceId },
+    });
+    if (assignedCount > 0) {
+      const assigned = await this.prisma.staffService.findFirst({
+        where: { serviceId: booking.serviceId, staffId },
+      });
+      if (!assigned) {
+        throw new BadRequestException(
+          'This staff member is not assigned to that service',
+        );
+      }
+    }
+
+    const location = await this.prisma.location.findFirst({
+      where: { id: booking.locationId, businessId: booking.businessId },
+      select: { timezone: true },
+    });
+    const timeZone = location?.timezone || DEFAULT_VENUE_TIMEZONE;
+    const startParts = getZonedParts(start, timeZone);
+    const endParts = getZonedParts(end, timeZone);
+    const availability = await this.prisma.availability.findFirst({
+      where: { staffId, dayOfWeek: startParts.dayOfWeek },
+    });
+    if (!availability) {
+      throw new BadRequestException('Staff is not available on that day');
+    }
+    const [availStartH, availStartM] = availability.startTime
+      .split(':')
+      .map(Number);
+    const [availEndH, availEndM] = availability.endTime.split(':').map(Number);
+    const startMinutes = startParts.hour * 60 + startParts.minute;
+    const endMinutes = endParts.hour * 60 + endParts.minute;
+    if (
+      startParts.year !== endParts.year ||
+      startParts.month !== endParts.month ||
+      startParts.day !== endParts.day ||
+      startMinutes < availStartH * 60 + availStartM ||
+      endMinutes > availEndH * 60 + availEndM
+    ) {
+      throw new BadRequestException(
+        'That time is outside the staff working hours',
+      );
+    }
 
     try {
       const result = await this.prisma.$transaction(async (tx) => {
@@ -574,7 +1087,7 @@ export class BookingService {
           where: {
             staffId,
             id: { not: bookingId },
-            status: { not: BookingStatus.cancelled },
+            status: { in: SLOT_BLOCKING_STATUSES },
             startDatetime: { lt: end },
             endDatetime: { gt: start },
           },
@@ -597,7 +1110,7 @@ export class BookingService {
         }
 
         const reminderAt =
-          booking.consumer.remindersEnabled === false
+          booking.consumer?.remindersEnabled === false
             ? null
             : new Date(start.getTime() - 24 * 60 * 60 * 1000);
 
@@ -625,7 +1138,7 @@ export class BookingService {
           startDatetime: updated.startDatetime.toISOString(),
           endDatetime: updated.endDatetime.toISOString(),
           staffId: updated.staffId,
-          staffName: updated.staff.user.name,
+          staffName: staffDisplayName(updated.staff),
           serviceName: updated.service.name,
           businessName: updated.business.name,
           reminderAt: updated.reminderAt?.toISOString() ?? null,
@@ -636,11 +1149,14 @@ export class BookingService {
         userId,
         type: NotificationType.booking_rescheduled,
         title: 'Appointment rescheduled',
-        body: `${result.serviceName} at ${result.businessName} moved to ${new Date(result.startDatetime).toLocaleString()} with ${result.staffName}.`,
+        body: `${result.serviceName} at ${result.businessName} moved to ${formatDateTimeInZone(new Date(result.startDatetime), timeZone)} (${timeZone}) with ${result.staffName}.`,
         href: '/notifications',
         bookingId: result.bookingId,
       });
-      return result;
+
+      void this.googleCalendar.syncBookingSafe(result.bookingId);
+
+      return { ...result, timeZone };
     } catch (err) {
       if (err instanceof ConflictException) throw err;
       if (isExclusionConflict(err)) {
@@ -665,15 +1181,33 @@ export class BookingService {
         business: { select: { name: true } },
         service: { select: { name: true } },
         staff: { include: { user: { select: { name: true } } } },
+        location: { select: { timezone: true } },
       },
       take: 50,
     });
 
     const sent: Array<{ bookingId: string; to: string; message: string }> = [];
     for (const b of due) {
-      const when = b.startDatetime.toLocaleString();
-      const body = `Reminder: ${b.service.name} at ${b.business.name} with ${b.staff.user.name} on ${when}.`;
+      if (!b.consumerId || !b.consumer?.email) {
+        await this.prisma.booking.updateMany({
+          where: { id: b.id, reminderSentAt: null },
+          data: { reminderSentAt: new Date() },
+        });
+        continue;
+      }
+      const timeZone = b.location.timezone || DEFAULT_VENUE_TIMEZONE;
+      const when = formatDateTimeInZone(b.startDatetime, timeZone);
+      const body = `Reminder: ${b.service.name} at ${b.business.name} with ${staffDisplayName(b.staff)} on ${when} (${timeZone}).`;
       const message = body;
+
+      // Claim first so concurrent cron workers cannot double-send.
+      const claimed = await this.prisma.booking.updateMany({
+        where: { id: b.id, reminderSentAt: null },
+        data: { reminderSentAt: new Date() },
+      });
+      if (claimed.count === 0) {
+        continue;
+      }
 
       try {
         await this.mail.send({
@@ -682,16 +1216,15 @@ export class BookingService {
           text: `Hi ${b.consumer.name},\n\n${body} Pay at the venue.\n\nSee your bookings: /home\n\n— Easement`,
         });
       } catch (err) {
-        // Leave reminderSentAt null so the next cron can retry.
+        // Allow retry on the next cron tick.
+        await this.prisma.booking.update({
+          where: { id: b.id },
+          data: { reminderSentAt: null },
+        });
         // eslint-disable-next-line no-console
         console.error(`Reminder email failed for booking ${b.id}`, err);
         continue;
       }
-
-      await this.prisma.booking.update({
-        where: { id: b.id },
-        data: { reminderSentAt: new Date() },
-      });
 
       await this.notifications.create({
         userId: b.consumerId,
@@ -726,6 +1259,12 @@ export class BookingService {
 
     if (booking.business.ownerId !== userId) {
       throw new ForbiddenException('Only business owner can complete booking');
+    }
+
+    if (booking.status !== BookingStatus.confirmed && booking.status !== BookingStatus.pending) {
+      throw new BadRequestException(
+        `Cannot complete a booking with status "${booking.status}"`,
+      );
     }
 
     const subtotal = booking.price;
@@ -772,16 +1311,68 @@ export class BookingService {
       };
     });
 
-    await this.notifications.create({
-      userId: booking.consumerId,
-      type: NotificationType.review_request,
-      title: 'How was your visit?',
-      body: `Leave a quick review for ${booking.service.name} at ${booking.business.name}.`,
-      href: '/notifications',
-      bookingId: booking.id,
-    });
+    if (booking.consumerId) {
+      await this.notifications.create({
+        userId: booking.consumerId,
+        type: NotificationType.review_request,
+        title: 'How was your visit?',
+        body: `Leave a quick review for ${booking.service.name} at ${booking.business.name}.`,
+        href: '/notifications',
+        bookingId: booking.id,
+      });
+    }
+
+    void this.googleCalendar.syncBookingSafe(result.bookingId);
 
     return result;
+  }
+
+  async markNoShow(bookingId: string, userId: string) {
+    const booking = await this.prisma.booking.findUnique({
+      where: { id: bookingId },
+      include: {
+        business: { select: { ownerId: true, name: true } },
+        service: { select: { name: true } },
+      },
+    });
+
+    if (!booking) {
+      throw new NotFoundException('Booking not found');
+    }
+    if (booking.business.ownerId !== userId) {
+      throw new ForbiddenException('Only business owner can mark no-show');
+    }
+    if (
+      booking.status !== BookingStatus.confirmed &&
+      booking.status !== BookingStatus.pending
+    ) {
+      throw new BadRequestException(
+        `Cannot mark no-show for a booking with status "${booking.status}"`,
+      );
+    }
+
+    const updated = await this.prisma.booking.update({
+      where: { id: bookingId },
+      data: {
+        status: BookingStatus.no_show,
+        reminderAt: null,
+      },
+    });
+
+    if (booking.consumerId) {
+      await this.notifications.create({
+        userId: booking.consumerId,
+        type: NotificationType.booking_cancelled,
+        title: 'Marked as no-show',
+        body: `${booking.service.name} at ${booking.business.name} was marked as a missed appointment. The time slot is open again.`,
+        href: '/notifications',
+        bookingId: updated.id,
+      });
+    }
+
+    void this.googleCalendar.syncBookingSafe(updated.id);
+
+    return { bookingId: updated.id, status: updated.status };
   }
 
   async createReview(bookingId: string, consumerId: string, dto: CreateReviewDto) {

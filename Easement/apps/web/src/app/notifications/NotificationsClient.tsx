@@ -13,6 +13,7 @@ import {
   type MyBooking,
   splitBookings,
 } from "@/lib/customer-bookings";
+import { formatDateTimeInZone } from "@/lib/datetime";
 
 type Me = { userId: string; name: string; email: string; role: string };
 
@@ -257,7 +258,7 @@ export default function NotificationsClient() {
                         {b.businessName} · {b.staffName}
                       </p>
                       <p className="mt-2 text-sm font-semibold">
-                        {new Date(b.startDatetime).toLocaleString()}
+                          {formatDateTimeInZone(b.startDatetime, b.timezone)}
                       </p>
                       <p className="mt-0.5 text-xs text-[var(--ease-text-subtle)]">
                         {b.locationName} · €{b.price.toFixed(2)} · pay at venue

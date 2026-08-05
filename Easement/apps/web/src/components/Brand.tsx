@@ -47,8 +47,8 @@ export function BrandWordmark({
 /** Header Link */
 export function BrandHeaderLink() {
   return (
-    <Link href="/" className="group flex items-center gap-3">
-      <div className="ease-emblem-badge p-1.5">
+    <Link href="/" className="ease-brand-lockup group">
+      <div className="ease-emblem-badge ease-emblem-badge--header">
         <BrandLogo size={28} className="h-7 w-7" priority />
       </div>
       <BrandWordmark size="md" />
