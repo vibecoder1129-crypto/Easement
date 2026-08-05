@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
@@ -32,6 +33,18 @@ function rankVenues(list: SpotlightVenue[]) {
 
 function coverFor(v: SpotlightVenue) {
   return v.coverImage || v.portfolio?.[0] || null;
+}
+
+function canOptimizeRemote(src: string) {
+  try {
+    const { protocol, hostname } = new URL(src);
+    return (
+      protocol === "https:" &&
+      (hostname === "images.unsplash.com" || hostname.endsWith(".unsplash.com"))
+    );
+  } catch {
+    return src.startsWith("/");
+  }
 }
 
 export function HeroSpotlight({ area = "Riga" }: { area?: string }) {
@@ -140,11 +153,14 @@ export function HeroSpotlight({ area = "Riga" }: { area?: string }) {
           }`}
         >
           {image ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
+            <Image
               src={image}
               alt={current.name}
-              className="absolute inset-0 h-full w-full object-cover"
+              fill
+              priority
+              sizes="(max-width: 1024px) 100vw, 560px"
+              className="object-cover"
+              unoptimized={!canOptimizeRemote(image)}
             />
           ) : (
             <div

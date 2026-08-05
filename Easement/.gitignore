@@ -12,3 +12,12 @@ apps/web/.env.local
 *.tsbuildinfo
 .DS_Store
 Thumbs.db
+
+# Local agent / curl artifacts
+.cursor/
+.tmp-cookies.txt
+.tmp*
+*.pem
+
+# Regenerable tooling caches
+**/node_modules/.cache/

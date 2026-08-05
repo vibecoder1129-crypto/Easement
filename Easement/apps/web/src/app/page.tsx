@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { AppHeader } from "@/components/AppHeader";
 import { BrandWordmark } from "@/components/Brand";
-import { HeroSpotlight } from "@/components/HeroSpotlight";
+import { HeroSpotlightLazy } from "@/components/HeroSpotlightLazy";
 
 const howItWorks = [
   {
@@ -106,7 +106,7 @@ export default function MarketingLandingPage() {
                 </div>
               </div>
 
-              <HeroSpotlight area="Riga" />
+              <HeroSpotlightLazy area="Riga" />
             </div>
           </section>
 

@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -290,11 +291,16 @@ export default function HomeClient() {
                   className="ease-card-clean flex gap-3 p-3 hover:border-indigo-300 transition"
                 >
                   {f.coverImage ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
+                    <Image
                       src={f.coverImage}
                       alt=""
+                      width={80}
+                      height={64}
                       className="h-16 w-20 rounded-xl object-cover shrink-0"
+                      sizes="80px"
+                      unoptimized={
+                        !/^https:\/\/images\.unsplash\.com\//.test(f.coverImage)
+                      }
                     />
                   ) : (
                     <div className="h-16 w-20 rounded-xl bg-indigo-100 shrink-0" />

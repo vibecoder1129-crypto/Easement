@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams, useRouter } from "next/navigation";
@@ -16,17 +17,49 @@ import {
   isSameCalendarDayInZone,
   toDatetimeLocalInZone,
 } from "@/lib/datetime";
-import { StaffDayGrid, type StaffDayGridBlock } from "./StaffDayGrid";
-import { CalendarTeamFilter } from "./CalendarTeamFilter";
-import { GoogleCalendarMenu } from "./GoogleCalendarMenu";
+import type { StaffDayGridBlock } from "./StaffDayGrid";
 import {
-  CalendarDisplaySettings,
   loadCalendarSize,
   saveCalendarSize,
   type CalendarSize,
-} from "./CalendarDisplaySettings";
-import { AppointmentDrawer } from "./AppointmentDrawer";
-import { AppointmentDetailPanel } from "./AppointmentDetailPanel";
+} from "./calendarSize";
+
+const StaffDayGrid = dynamic(
+  () => import("./StaffDayGrid").then((m) => m.StaffDayGrid),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex-1 min-h-[240px] animate-pulse bg-[var(--ease-bg)] rounded-xl" />
+    ),
+  },
+);
+
+const AppointmentDrawer = dynamic(
+  () => import("./AppointmentDrawer").then((m) => m.AppointmentDrawer),
+  { ssr: false },
+);
+
+const AppointmentDetailPanel = dynamic(
+  () =>
+    import("./AppointmentDetailPanel").then((m) => m.AppointmentDetailPanel),
+  { ssr: false },
+);
+
+const CalendarTeamFilter = dynamic(
+  () => import("./CalendarTeamFilter").then((m) => m.CalendarTeamFilter),
+  { ssr: false },
+);
+
+const GoogleCalendarMenu = dynamic(
+  () => import("./GoogleCalendarMenu").then((m) => m.GoogleCalendarMenu),
+  { ssr: false },
+);
+
+const CalendarDisplaySettings = dynamic(
+  () =>
+    import("./CalendarDisplaySettings").then((m) => m.CalendarDisplaySettings),
+  { ssr: false },
+);
 
 type Me = { userId: string; name: string; email: string; role: string };
 

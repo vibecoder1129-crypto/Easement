@@ -1,10 +1,16 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
 import { BrandLogo, BrandWordmark } from "@/components/Brand";
-import { NotificationBell } from "@/components/NotificationBell";
 import { ThemeSlider } from "@/components/ThemeSlider";
+
+const NotificationBell = dynamic(
+  () =>
+    import("@/components/NotificationBell").then((m) => m.NotificationBell),
+  { ssr: false },
+);
 
 function navLinkClass(active: boolean) {
   return `ease-nav-link ${active ? "ease-nav-link-active" : ""}`;

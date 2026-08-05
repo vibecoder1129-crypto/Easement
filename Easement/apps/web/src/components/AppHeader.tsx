@@ -1,12 +1,18 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import { BrandHeaderLink } from "@/components/Brand";
-import { NotificationBell } from "@/components/NotificationBell";
 import { ThemeSlider } from "@/components/ThemeSlider";
+
+const NotificationBell = dynamic(
+  () =>
+    import("@/components/NotificationBell").then((m) => m.NotificationBell),
+  { ssr: false },
+);
 
 type HeaderUser = { name: string; email: string; role: string };
 

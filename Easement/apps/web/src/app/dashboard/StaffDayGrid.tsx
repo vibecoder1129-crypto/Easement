@@ -14,7 +14,7 @@ import {
 import {
   calendarSizeLayout,
   type CalendarSize,
-} from "./CalendarDisplaySettings";
+} from "./calendarSize";
 
 export type StaffDayGridBooking = {
   bookingId: string;

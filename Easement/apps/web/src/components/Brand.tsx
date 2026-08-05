@@ -56,25 +56,6 @@ export function BrandHeaderLink() {
   );
 }
 
-/** Hero centerpiece brand emblem */
-export function BrandHero() {
-  return (
-    <div className="flex flex-col items-center text-center">
-      <div className="ease-emblem-badge mb-6 p-4 sm:p-5 shadow-lg shadow-indigo-100">
-        <BrandLogo
-          size={80}
-          priority
-          className="h-16 w-16 sm:h-20 sm:w-20"
-        />
-      </div>
-      <BrandWordmark size="xl" />
-      <p className="mt-3 text-xs font-bold tracking-[0.2em] text-indigo-600 uppercase sm:text-sm">
-        Appointments Made Effortless
-      </p>
-    </div>
-  );
-}
-
 /** Clean Footer Brand */
 export function BrandFooter() {
   return (

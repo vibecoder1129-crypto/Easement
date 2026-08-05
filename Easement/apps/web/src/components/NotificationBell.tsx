@@ -82,11 +82,28 @@ export function NotificationBell() {
     }
   }, []);
 
+  /** Lightweight badge poll — avoid fetching bookings/list every tick. */
+  const refreshUnread = useCallback(async () => {
+    try {
+      const countRes = await api<{ count: number }>(
+        "/notifications/unread-count",
+      );
+      setUnread(countRes.count);
+    } catch {
+      setUnread(0);
+    }
+  }, []);
+
   useEffect(() => {
     void refresh();
-    const id = window.setInterval(() => void refresh(), 30000);
+    const id = window.setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+        return;
+      }
+      void refreshUnread();
+    }, 60_000);
     return () => window.clearInterval(id);
-  }, [refresh, pathname]);
+  }, [refresh, refreshUnread, pathname]);
 
   useEffect(() => {
     if (!open) return;
