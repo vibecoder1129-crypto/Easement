@@ -136,9 +136,13 @@ export class BusinessController {
   }
 
   @Get('staff/:id/availability')
-  @Roles(UserRole.business_owner, UserRole.staff, UserRole.admin, UserRole.consumer)
-  getStaffAvailability(@Param('id') staffId: string) {
-    return this.businessService.listStaffAvailability(staffId);
+  @Roles(UserRole.business_owner, UserRole.staff, UserRole.admin)
+  getStaffAvailability(@Param('id') staffId: string, @Req() req: Request) {
+    return this.businessService.listStaffAvailability(
+      staffId,
+      req.session.user!.userId,
+      req.session.user!.role,
+    );
   }
 
   @Delete('staff/:id/availability/:dayOfWeek')
@@ -170,8 +174,12 @@ export class BusinessController {
   }
 
   @Get('staff/:id/time-off')
-  @Roles(UserRole.business_owner, UserRole.staff, UserRole.admin, UserRole.consumer)
-  getStaffTimeOff(@Param('id') staffId: string) {
-    return this.businessService.listStaffTimeOff(staffId);
+  @Roles(UserRole.business_owner, UserRole.staff, UserRole.admin)
+  getStaffTimeOff(@Param('id') staffId: string, @Req() req: Request) {
+    return this.businessService.listStaffTimeOff(
+      staffId,
+      req.session.user!.userId,
+      req.session.user!.role,
+    );
   }
 }

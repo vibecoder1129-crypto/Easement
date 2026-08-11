@@ -1,6 +1,19 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
+
+function canOptimizeRemote(src: string) {
+  try {
+    const { protocol, hostname } = new URL(src);
+    return (
+      protocol === "https:" &&
+      (hostname === "images.unsplash.com" || hostname.endsWith(".unsplash.com"))
+    );
+  } catch {
+    return src.startsWith("/");
+  }
+}
 
 export function ImageCarousel({
   images,
@@ -53,14 +66,21 @@ export function ImageCarousel({
         className={`flex ${aspectClass} overflow-x-auto snap-x snap-mandatory scroll-smooth [scrollbar-width:none] [&::-webkit-scrollbar]:hidden`}
       >
         {slides.map((src, i) => (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
+          <div
             key={`${src}-${i}`}
-            src={src}
-            alt={`${alt} ${i + 1}`}
-            className="h-full w-full shrink-0 snap-center object-cover"
-            draggable={false}
-          />
+            className="relative h-full w-full shrink-0 snap-center"
+          >
+            <Image
+              src={src}
+              alt={`${alt} ${i + 1}`}
+              fill
+              sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 400px"
+              className="object-cover"
+              draggable={false}
+              priority={i === 0}
+              unoptimized={!canOptimizeRemote(src)}
+            />
+          </div>
         ))}
       </div>
 

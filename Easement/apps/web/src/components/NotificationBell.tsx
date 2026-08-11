@@ -14,6 +14,7 @@ import {
   type MyBooking,
   splitBookings,
 } from "@/lib/customer-bookings";
+import { formatDateTimeInZone } from "@/lib/datetime";
 
 type NotificationItem = {
   id: string;
@@ -81,11 +82,28 @@ export function NotificationBell() {
     }
   }, []);
 
+  /** Lightweight badge poll — avoid fetching bookings/list every tick. */
+  const refreshUnread = useCallback(async () => {
+    try {
+      const countRes = await api<{ count: number }>(
+        "/notifications/unread-count",
+      );
+      setUnread(countRes.count);
+    } catch {
+      setUnread(0);
+    }
+  }, []);
+
   useEffect(() => {
     void refresh();
-    const id = window.setInterval(() => void refresh(), 30000);
+    const id = window.setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+        return;
+      }
+      void refreshUnread();
+    }, 60_000);
     return () => window.clearInterval(id);
-  }, [refresh, pathname]);
+  }, [refresh, refreshUnread, pathname]);
 
   useEffect(() => {
     if (!open) return;
@@ -184,40 +202,42 @@ export function NotificationBell() {
         </button>
 
         {open && (
-          <div className="absolute right-0 mt-2 w-[min(22rem,calc(100vw-2rem))] rounded-2xl border border-[var(--ease-border)] bg-[var(--ease-surface)] shadow-xl z-[80] overflow-hidden">
-            <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-[var(--ease-border)]">
-              <div className="font-bold text-sm">Appointments</div>
-              <span className="text-[10px] text-[var(--ease-text-subtle)]">
+          <div className="absolute right-0 mt-2.5 w-[min(24rem,calc(100vw-1.5rem))] rounded-[1.35rem] border border-[var(--ease-border)] bg-[var(--ease-surface)] shadow-[0_28px_60px_-28px_rgba(15,23,42,0.45)] z-[80] overflow-hidden">
+            <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-[var(--ease-border)]">
+              <div className="font-bold text-[15px] text-[var(--ease-text-main)]">
+                Appointments
+              </div>
+              <span className="text-xs text-[var(--ease-text-subtle)]">
                 {upcoming.length} upcoming
               </span>
             </div>
 
             {error && (
-              <p className="px-4 py-2 text-xs text-rose-600 border-b border-[var(--ease-border)]">
+              <p className="px-5 py-3 text-xs text-rose-600 border-b border-[var(--ease-border)]">
                 {error}
               </p>
             )}
 
-            <div className="max-h-80 overflow-y-auto">
+            <div className="max-h-[22rem] overflow-y-auto">
               {upcoming.length > 0 && (
-                <div className="px-3 pt-3 pb-1">
-                  <p className="px-1 mb-2 text-[10px] font-bold uppercase tracking-wider text-[var(--ease-text-subtle)]">
+                <div className="px-4 pt-4 pb-2">
+                  <p className="px-1 mb-3 text-[10px] font-bold uppercase tracking-wider text-[var(--ease-text-subtle)]">
                     Manage
                   </p>
-                  <div className="space-y-2">
-                    {upcoming.slice(0, 4).map((b) => (
+                  <div className="space-y-3">
+                    {upcoming.slice(0, 3).map((b) => (
                       <div
                         key={b.bookingId}
-                        className="rounded-xl border border-[var(--ease-border)] px-3 py-2.5"
+                        className="rounded-2xl border border-[var(--ease-border)] bg-[var(--ease-bg)]/40 px-4 py-3.5"
                       >
-                        <div className="font-semibold text-sm">
+                        <div className="font-semibold text-sm text-[var(--ease-text-main)]">
                           {b.serviceName}
                         </div>
-                        <p className="text-[11px] text-[var(--ease-text-muted)] mt-0.5">
+                        <p className="text-xs text-[var(--ease-text-muted)] mt-1 leading-relaxed">
                           {b.businessName} ·{" "}
-                          {new Date(b.startDatetime).toLocaleString()}
+                          {formatDateTimeInZone(b.startDatetime, b.timezone)}
                         </p>
-                        <div className="mt-2 flex gap-2">
+                        <div className="mt-3 flex gap-2">
                           {canRescheduleBooking(b) && (
                             <button
                               type="button"
@@ -226,7 +246,7 @@ export function NotificationBell() {
                                 setOpen(false);
                                 setRescheduleFor(b);
                               }}
-                              className="flex-1 rounded-lg bg-indigo-600 text-white text-[11px] font-bold py-1.5 disabled:opacity-50"
+                              className="flex-1 rounded-xl bg-[var(--ease-accent)] text-white text-xs font-bold py-2 disabled:opacity-50"
                             >
                               Change time
                             </button>
@@ -241,7 +261,7 @@ export function NotificationBell() {
                                   bookingId: b.bookingId,
                                 })
                               }
-                              className="flex-1 rounded-lg border border-rose-200 text-rose-600 text-[11px] font-bold py-1.5 hover:bg-rose-50 disabled:opacity-50"
+                              className="flex-1 rounded-xl border border-rose-200 text-rose-600 text-xs font-bold py-2 hover:bg-rose-50 disabled:opacity-50 dark:border-rose-500/30 dark:hover:bg-rose-500/10"
                             >
                               Cancel
                             </button>
@@ -253,8 +273,8 @@ export function NotificationBell() {
                 </div>
               )}
 
-              <div className="px-3 pt-3 pb-2">
-                <div className="px-1 mb-2 flex items-center justify-between gap-2">
+              <div className="px-4 pt-4 pb-4">
+                <div className="px-1 mb-3 flex items-center justify-between gap-2">
                   <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--ease-text-subtle)]">
                     Updates · 10 days
                   </p>
@@ -263,35 +283,35 @@ export function NotificationBell() {
                       type="button"
                       disabled={notifBusy}
                       onClick={() => setConfirmAction({ kind: "clear-all" })}
-                      className="text-[10px] font-bold text-rose-600 hover:text-rose-700 disabled:opacity-50"
+                      className="text-[10px] font-bold uppercase tracking-wide text-rose-600 hover:text-rose-700 disabled:opacity-50"
                     >
                       Clear all
                     </button>
                   )}
                 </div>
                 {items.length === 0 ? (
-                  <p className="px-1 py-4 text-xs text-center text-[var(--ease-text-muted)]">
+                  <p className="px-1 py-6 text-sm text-center text-[var(--ease-text-muted)] leading-relaxed">
                     {upcoming.length === 0
                       ? "No appointments yet. Book from the marketplace."
                       : "No new updates."}
                   </p>
                 ) : (
-                  <div className="space-y-1">
+                  <div className="space-y-3">
                     {items.map((n) => (
                       <div
                         key={n.id}
-                        className={`rounded-lg px-2.5 py-2 ${
+                        className={`rounded-2xl border border-[var(--ease-border)] px-4 py-3.5 ${
                           !n.read
-                            ? "bg-indigo-50/60 dark:bg-indigo-500/10"
-                            : ""
+                            ? "bg-[var(--ease-accent-soft)] border-[color-mix(in_srgb,var(--ease-accent)_22%,var(--ease-border))]"
+                            : "bg-[var(--ease-bg)]/35"
                         }`}
                       >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-600">
+                        <div className="flex items-start justify-between gap-3">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--ease-accent)]">
                             {typeLabel(n.type)}
                           </span>
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <span className="text-[10px] text-[var(--ease-text-subtle)]">
+                          <div className="flex items-center gap-2 shrink-0">
+                            <span className="text-[11px] text-[var(--ease-text-subtle)]">
                               {new Date(n.createdAt).toLocaleDateString()}
                             </span>
                             <button
@@ -302,12 +322,12 @@ export function NotificationBell() {
                               onClick={() =>
                                 setConfirmAction({ kind: "delete", id: n.id })
                               }
-                              className="inline-flex h-6 w-6 items-center justify-center rounded-md text-[var(--ease-text-subtle)] hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
+                              className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-[var(--ease-text-subtle)] hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50 dark:hover:bg-rose-500/10"
                             >
                               <svg
                                 viewBox="0 0 24 24"
-                                width="13"
-                                height="13"
+                                width="14"
+                                height="14"
                                 fill="none"
                                 stroke="currentColor"
                                 strokeWidth="2"
@@ -322,10 +342,10 @@ export function NotificationBell() {
                             </button>
                           </div>
                         </div>
-                        <div className="text-xs font-semibold mt-0.5">
+                        <div className="text-sm font-semibold mt-2 text-[var(--ease-text-main)] leading-snug">
                           {n.title}
                         </div>
-                        <p className="text-[11px] text-[var(--ease-text-muted)] mt-0.5 line-clamp-2">
+                        <p className="text-xs text-[var(--ease-text-muted)] mt-1.5 leading-relaxed line-clamp-2">
                           {n.body}
                         </p>
                       </div>
@@ -335,22 +355,22 @@ export function NotificationBell() {
               </div>
             </div>
 
-            <div className="border-t border-[var(--ease-border)] p-2">
+            <div className="border-t border-[var(--ease-border)] p-3">
               <Link
                 href="/notifications"
                 onClick={() => setOpen(false)}
-                className="flex items-center justify-between gap-2 rounded-xl border border-indigo-200 dark:border-indigo-500/30 bg-indigo-50/80 dark:bg-indigo-500/10 px-3 py-2.5 hover:bg-indigo-100 dark:hover:bg-indigo-500/20 transition"
+                className="flex items-center justify-between gap-3 rounded-2xl border border-[color-mix(in_srgb,var(--ease-accent)_28%,var(--ease-border))] bg-[var(--ease-accent-soft)] px-4 py-3.5 hover:brightness-[0.98] transition"
               >
                 <div>
-                  <div className="text-xs font-bold text-indigo-700 dark:text-indigo-300">
+                  <div className="text-sm font-bold text-[var(--ease-accent)]">
                     Expand full panel
                   </div>
-                  <div className="text-[10px] text-[var(--ease-text-muted)]">
+                  <div className="text-xs text-[var(--ease-text-muted)] mt-0.5">
                     All appointments, change time, cancel
                   </div>
                 </div>
                 <span
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white shrink-0"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--ease-accent)] text-white shrink-0"
                   aria-hidden
                 >
                   <svg

@@ -1,9 +1,11 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppHeader } from "@/components/AppHeader";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { RescheduleModal } from "@/components/RescheduleModal";
 import { ReviewForm } from "@/components/ReviewForm";
 import { api } from "@/lib/api";
@@ -14,6 +16,7 @@ import {
   MyBooking,
   splitBookings,
 } from "@/lib/customer-bookings";
+import { formatDateInZone, formatDateTimeInZone } from "@/lib/datetime";
 
 type Me = {
   userId: string;
@@ -38,6 +41,8 @@ export default function HomeClient() {
   const router = useRouter();
   const [me, setMe] = useState<Me | null>(null);
   const [bookings, setBookings] = useState<MyBooking[]>([]);
+  const [cancelId, setCancelId] = useState<string | null>(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
   const [favorites, setFavorites] = useState<Favorite[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -78,16 +83,20 @@ export default function HomeClient() {
     };
   }, [router]);
 
-  async function cancelBooking(bookingId: string) {
-    if (!window.confirm("Cancel this appointment?")) return;
-    setActionId(bookingId);
+  async function runCancel() {
+    if (!cancelId) return;
+    setConfirmBusy(true);
+    setActionId(cancelId);
     setError(null);
     try {
-      await cancelMyBooking(bookingId);
+      await cancelMyBooking(cancelId);
+      setCancelId(null);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not cancel");
+      setCancelId(null);
     } finally {
+      setConfirmBusy(false);
       setActionId(null);
     }
   }
@@ -143,6 +152,19 @@ export default function HomeClient() {
         onClose={() => setRescheduleFor(null)}
         onDone={load}
       />
+      <ConfirmDialog
+        open={!!cancelId}
+        title="Cancel appointment?"
+        message="The time slot will open again for others."
+        confirmLabel="Cancel appointment"
+        cancelLabel="Keep it"
+        danger
+        busy={confirmBusy}
+        onClose={() => {
+          if (!confirmBusy) setCancelId(null);
+        }}
+        onConfirm={() => void runCancel()}
+      />
       <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6">
         <div className="mb-8">
           <p className="text-sm font-semibold text-indigo-600 dark:text-indigo-400">
@@ -170,7 +192,7 @@ export default function HomeClient() {
             onClick={toggleReminders}
             className={`rounded-full px-4 py-2 text-xs font-bold border ${
               me?.remindersEnabled ?? true
-                ? "bg-indigo-600 text-white border-indigo-600"
+                ? "bg-[var(--ease-btn-primary-bg)] text-white border-[var(--ease-btn-primary-bg)]"
                 : "border-[var(--ease-border)] text-[var(--ease-text-muted)]"
             }`}
           >
@@ -186,12 +208,12 @@ export default function HomeClient() {
 
         <section className="mb-10">
           {next ? (
-            <div className="ease-card-clean p-5 sm:p-7 border-indigo-200/80 dark:border-indigo-500/30">
-              <div className="text-xs font-bold uppercase tracking-wider text-indigo-600">
+            <div className="ease-card-clean p-5 sm:p-7 border-[var(--ease-card-hover-border)]">
+              <div className="text-xs font-bold uppercase tracking-wider text-[var(--ease-accent)]">
                 Next appointment
               </div>
               <div className="mt-2 text-sm font-semibold text-[var(--ease-text-muted)]">
-                {new Date(next.startDatetime).toLocaleString()}
+                {formatDateTimeInZone(next.startDatetime, next.timezone)}
               </div>
               <h2 className="text-2xl font-extrabold mt-1">{next.serviceName}</h2>
               <p className="text-sm text-[var(--ease-text-muted)] mt-1">
@@ -202,7 +224,8 @@ export default function HomeClient() {
               </p>
               {next.reminderAt && !next.reminderSentAt && (
                 <p className="text-xs text-indigo-600 mt-2 font-semibold">
-                  Reminder set for {new Date(next.reminderAt).toLocaleString()}
+                  Reminder set for{" "}
+                  {formatDateTimeInZone(next.reminderAt, next.timezone)}
                 </p>
               )}
               {next.reminderSentAt && (
@@ -227,7 +250,7 @@ export default function HomeClient() {
                 <button
                   type="button"
                   disabled={actionId === next.bookingId}
-                  onClick={() => cancelBooking(next.bookingId)}
+                  onClick={() => setCancelId(next.bookingId)}
                   className="rounded-full border border-red-200 text-red-600 text-xs font-semibold py-2.5 px-5 hover:bg-red-50"
                 >
                   Cancel
@@ -268,11 +291,16 @@ export default function HomeClient() {
                   className="ease-card-clean flex gap-3 p-3 hover:border-indigo-300 transition"
                 >
                   {f.coverImage ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
+                    <Image
                       src={f.coverImage}
                       alt=""
+                      width={80}
+                      height={64}
                       className="h-16 w-20 rounded-xl object-cover shrink-0"
+                      sizes="80px"
+                      unoptimized={
+                        !/^https:\/\/images\.unsplash\.com\//.test(f.coverImage)
+                      }
                     />
                   ) : (
                     <div className="h-16 w-20 rounded-xl bg-indigo-100 shrink-0" />
@@ -311,7 +339,7 @@ export default function HomeClient() {
                   key={b.bookingId}
                   booking={b}
                   busy={actionId === b.bookingId}
-                  onCancel={() => cancelBooking(b.bookingId)}
+                  onCancel={() => setCancelId(b.bookingId)}
                   onReschedule={() => setRescheduleFor(b)}
                 />
               ))}
@@ -354,7 +382,7 @@ export default function HomeClient() {
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <div className="text-xs text-[var(--ease-text-subtle)]">
-                        {new Date(b.startDatetime).toLocaleDateString()}
+                        {formatDateInZone(b.startDatetime, b.timezone)}
                       </div>
                       <div className="font-bold mt-0.5">
                         {b.serviceName} · {b.businessName}
@@ -425,7 +453,7 @@ function BookingRow({
       <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
         <div>
           <div className="text-xs font-bold text-indigo-600">
-            {new Date(b.startDatetime).toLocaleString()}
+            {formatDateTimeInZone(b.startDatetime, b.timezone)}
           </div>
           <h3 className="font-bold mt-1">{b.serviceName}</h3>
           <p className="text-sm text-[var(--ease-text-muted)]">

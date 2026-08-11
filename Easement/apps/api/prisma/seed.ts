@@ -1,10 +1,12 @@
 import { PrismaClient, BookingStatus, BusinessStatus, UserRole } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import { zonedWallTimeToUtc } from '../src/booking/timezone.util';
 
 const prisma = new PrismaClient();
 
 const DEMO_OWNER_EMAIL = 'demo.salon@easement.local';
 const DEMO_PASSWORD = 'DemoSalon123!';
+const DEMO_TIMEZONE = 'Europe/Riga';
 
 /** Stable Unsplash salon/spa imagery for demo portfolio */
 const PORTFOLIO = [
@@ -56,11 +58,30 @@ async function upsertUser(input: {
   });
 }
 
+/** Past demo booking start as a Europe/Riga wall-clock instant (stored as UTC). */
 function daysAgo(days: number, hour = 11) {
-  const d = new Date();
-  d.setDate(d.getDate() - days);
-  d.setHours(hour, 0, 0, 0);
-  return d;
+  const nowParts = new Intl.DateTimeFormat('en-US', {
+    timeZone: DEMO_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+  const map: Record<string, string> = {};
+  for (const part of nowParts) {
+    if (part.type !== 'literal') map[part.type] = part.value;
+  }
+  const base = new Date(
+    Date.UTC(Number(map.year), Number(map.month) - 1, Number(map.day), 12, 0, 0),
+  );
+  base.setUTCDate(base.getUTCDate() - days);
+  return zonedWallTimeToUtc(
+    base.getUTCFullYear(),
+    base.getUTCMonth() + 1,
+    base.getUTCDate(),
+    hour,
+    0,
+    DEMO_TIMEZONE,
+  );
 }
 
 async function main() {
@@ -145,7 +166,7 @@ async function main() {
       address: 'Elizabetes iela 21, Centrs, Rīga, LV-1010',
       lat: 56.9532,
       lng: 24.1165,
-      timezone: 'Europe/Riga',
+      timezone: DEMO_TIMEZONE,
     },
   });
 
@@ -204,6 +225,9 @@ async function main() {
       businessId: business.id,
       locationId: location.id,
       userId: mila.id,
+      name: mila.name,
+      email: mila.email,
+      phone: mila.phone,
       title: 'Senior stylist',
       photoUrl:
         'https://images.unsplash.com/photo-1580618672591-eb180b1a973f?w=400&q=80',
@@ -215,6 +239,9 @@ async function main() {
       businessId: business.id,
       locationId: location.id,
       userId: jonas.id,
+      name: jonas.name,
+      email: jonas.email,
+      phone: jonas.phone,
       title: 'Barber & stylist',
       photoUrl:
         'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&q=80',
@@ -335,10 +362,14 @@ async function main() {
   console.log('\nDemo salon ready.');
   console.log(`  Business: ${business.name} (${business.id})`);
   console.log(`  Location: ${location.address}`);
+  console.log(`  Timezone: ${DEMO_TIMEZONE}`);
   console.log(`  Owner login: ${DEMO_OWNER_EMAIL} / ${DEMO_PASSWORD}`);
   console.log(`  Client logins (reviews): anna.client@easement.local / ${DEMO_PASSWORD}`);
   console.log('  Portfolio images: 6');
   console.log(`  Reviews: ${reviewSpecs.length}`);
+  console.log(
+    '  Note: seed wipes businesses/locations. If an old DB still has UTC locations without re-seed, run: UPDATE "Location" SET timezone = \'Europe/Riga\' WHERE timezone IS DISTINCT FROM \'Europe/Riga\';',
+  );
 }
 
 main()

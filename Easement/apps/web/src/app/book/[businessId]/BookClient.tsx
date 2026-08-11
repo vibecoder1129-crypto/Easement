@@ -13,6 +13,7 @@ import {
   readBookingDraft,
   saveBookingDraft,
 } from "@/lib/booking-draft";
+import { DEFAULT_VENUE_TIMEZONE, formatDateTimeInZone } from "@/lib/datetime";
 
 type PublicBusiness = {
   businessId: string;
@@ -144,6 +145,7 @@ export default function BookClient() {
     startDatetime: string;
     staffName: string;
     serviceName: string;
+    timeZone?: string;
   } | null>(null);
   const restoredRef = useRef(false);
   const pendingConfirmRef = useRef(false);
@@ -253,8 +255,14 @@ export default function BookClient() {
       staffId && staffId !== "any"
         ? `&staffId=${encodeURIComponent(staffId)}`
         : "";
+    const locationId =
+      business.locations[0]?.locationId ??
+      business.staff.find((s) => s.staffId === staffId)?.locationId;
+    const locQuery = locationId
+      ? `&locationId=${encodeURIComponent(locationId)}`
+      : "";
     api<{ slots: Slot[] }>(
-      `/public/slots?businessId=${encodeURIComponent(business.businessId)}&serviceId=${encodeURIComponent(serviceId)}&date=${encodeURIComponent(date)}${staffQuery}`,
+      `/public/slots?businessId=${encodeURIComponent(business.businessId)}&serviceId=${encodeURIComponent(serviceId)}&date=${encodeURIComponent(date)}${staffQuery}${locQuery}`,
     )
       .then((res) => {
         if (!mounted) return;
@@ -312,6 +320,7 @@ export default function BookClient() {
         startDatetime: string;
         staffName: string;
         serviceName: string;
+        timeZone?: string;
       }>("/bookings", {
         method: "POST",
         body: JSON.stringify({
@@ -329,6 +338,12 @@ export default function BookClient() {
         startDatetime: result.startDatetime,
         staffName: result.staffName,
         serviceName: result.serviceName,
+        timeZone:
+          result.timeZone ||
+          business.locations.find((l) => l.locationId === locationId)
+            ?.timezone ||
+          business.locations[0]?.timezone ||
+          DEFAULT_VENUE_TIMEZONE,
       });
       setStep(5);
       setAuthed(true);
@@ -1034,7 +1049,10 @@ export default function BookClient() {
                         When
                       </div>
                       <div className="font-semibold mt-0.5">
-                        {new Date(selectedSlot.startDatetime).toLocaleString()}
+                        {formatDateTimeInZone(
+                          selectedSlot.startDatetime,
+                          business.locations[0]?.timezone,
+                        )}
                       </div>
                       <div className="text-[var(--ease-text-muted)]">
                         with {selectedSlot.staffName}
@@ -1066,7 +1084,10 @@ export default function BookClient() {
                 <p className="text-sm text-[var(--ease-text-muted)]">
                   {success.serviceName} with {success.staffName}
                   <br />
-                  {new Date(success.startDatetime).toLocaleString()}
+                  {formatDateTimeInZone(
+                    success.startDatetime,
+                    success.timeZone || business?.locations[0]?.timezone,
+                  )}
                 </p>
                 <p className="text-xs text-[var(--ease-text-subtle)]">
                   Pay at the venue. No card charged online.

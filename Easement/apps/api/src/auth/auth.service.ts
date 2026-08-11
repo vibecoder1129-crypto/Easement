@@ -62,11 +62,16 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
 
+    const versionRows = await this.prisma.$queryRaw<
+      Array<{ sessionVersion: number }>
+    >`SELECT "sessionVersion" FROM "User" WHERE id = ${user.id}`;
+
     return {
       userId: user.id,
       role: user.role,
       name: user.name,
       email: user.email,
+      sessionVersion: Number(versionRows[0]?.sessionVersion ?? 0),
     };
   }
 
@@ -77,6 +82,9 @@ export class AuthService {
     if (!user) {
       throw new UnauthorizedException('Not authenticated');
     }
+    const versionRows = await this.prisma.$queryRaw<
+      Array<{ sessionVersion: number }>
+    >`SELECT "sessionVersion" FROM "User" WHERE id = ${userId}`;
     return {
       userId: user.id,
       name: user.name,
@@ -84,6 +92,7 @@ export class AuthService {
       phone: user.phone,
       role: user.role,
       remindersEnabled: user.remindersEnabled,
+      sessionVersion: Number(versionRows[0]?.sessionVersion ?? 0),
     };
   }
 
@@ -155,12 +164,18 @@ export class AuthService {
     }
 
     const passwordHash = await bcrypt.hash(dto.newPassword, 12);
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { passwordHash },
-    });
+    await this.prisma.$executeRaw`
+      UPDATE "User"
+      SET "passwordHash" = ${passwordHash},
+          "sessionVersion" = "sessionVersion" + 1
+      WHERE id = ${userId}
+    `;
+    const versionRows = await this.prisma.$queryRaw<
+      Array<{ sessionVersion: number }>
+    >`SELECT "sessionVersion" FROM "User" WHERE id = ${userId}`;
+    const sessionVersion = Number(versionRows[0]?.sessionVersion ?? 0);
 
-    return { success: true };
+    return { success: true, sessionVersion };
   }
 
   async deleteAccount(userId: string, password: string) {

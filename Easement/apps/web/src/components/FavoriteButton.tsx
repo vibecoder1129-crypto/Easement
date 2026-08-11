@@ -8,10 +8,12 @@ export function FavoriteButton({
   businessId,
   initialFavorited = false,
   className = "",
+  onChange,
 }: {
   businessId: string;
   initialFavorited?: boolean;
   className?: string;
+  onChange?: (favorited: boolean) => void;
 }) {
   const router = useRouter();
   const [favorited, setFavorited] = useState(initialFavorited);
@@ -26,9 +28,11 @@ export function FavoriteButton({
       if (favorited) {
         await api(`/favorites/${businessId}`, { method: "DELETE" });
         setFavorited(false);
+        onChange?.(false);
       } else {
         await api(`/favorites/${businessId}`, { method: "POST" });
         setFavorited(true);
+        onChange?.(true);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : "";

@@ -44,15 +44,16 @@ export class CreateStaffDto {
   @MinLength(1)
   locationId!: string;
 
+  @IsOptional()
   @IsString()
   @MinLength(1)
-  title!: string;
+  title?: string;
 
+  /** Onboarding only: link the owner as staff. */
   @IsOptional()
   @IsString()
   userId?: string;
 
-  /** Create a new employee login (preferred for dashboard "Add employee") */
   @IsOptional()
   @IsString()
   @MinLength(1)
@@ -60,17 +61,11 @@ export class CreateStaffDto {
 
   @IsOptional()
   @IsString()
-  @MinLength(3)
   email?: string;
 
   @IsOptional()
   @IsString()
   phone?: string;
-
-  @IsOptional()
-  @IsString()
-  @MinLength(8)
-  password?: string;
 }
 
 export class CreateServiceDto {

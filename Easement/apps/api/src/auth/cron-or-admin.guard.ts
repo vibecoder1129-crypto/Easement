@@ -6,10 +6,13 @@ import {
 } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import type { Request } from 'express';
+import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class CronOrAdminGuard implements CanActivate {
-  canActivate(context: ExecutionContext): boolean {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest<Request>();
     const cronSecret = process.env.CRON_SECRET?.trim();
     const header = req.headers['x-cron-secret'];
@@ -19,8 +22,18 @@ export class CronOrAdminGuard implements CanActivate {
       return true;
     }
 
-    if (req.session?.user?.role === UserRole.admin) {
-      return true;
+    const userId = req.session?.user?.userId;
+    if (userId) {
+      const dbUser = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { role: true },
+      });
+      if (dbUser?.role === UserRole.admin) {
+        if (req.session.user && req.session.user.role !== dbUser.role) {
+          req.session.user = { ...req.session.user, role: dbUser.role };
+        }
+        return true;
+      }
     }
 
     throw new ForbiddenException(

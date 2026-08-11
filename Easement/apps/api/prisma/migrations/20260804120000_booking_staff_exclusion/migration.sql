@@ -1,12 +1,3 @@
--- Harden concurrent bookings: no overlapping non-cancelled bookings per staff.
+﻿-- Harden concurrent bookings: btree_gist for staff overlap (see 20260804230000_exclusion_free_no_show).
+-- PG rejects tstzrange(...) in EXCLUDE index expressions (not IMMUTABLE); overlap uses stored slotRange later.
 CREATE EXTENSION IF NOT EXISTS btree_gist;
-
-ALTER TABLE "Booking" DROP CONSTRAINT IF EXISTS "booking_staff_no_overlap";
-
-ALTER TABLE "Booking"
-ADD CONSTRAINT "booking_staff_no_overlap"
-EXCLUDE USING gist (
-  "staffId" WITH =,
-  tstzrange("startDatetime", "endDatetime", '[)') WITH &&
-)
-WHERE ("status" <> 'cancelled');

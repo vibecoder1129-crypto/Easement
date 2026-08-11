@@ -1,6 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { BusinessStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { staffDisplayName } from '../business/staff.util';
+import { DEFAULT_VENUE_TIMEZONE } from '../booking/timezone.util';
 
 const DAY_LABELS = [
   'Sunday',
@@ -57,6 +59,11 @@ export class MarketplaceService {
                     },
                   },
                 },
+                {
+                  services: {
+                    some: { name: { contains: q, mode: 'insensitive' } },
+                  },
+                },
               ],
             }
           : {}),
@@ -85,15 +92,15 @@ export class MarketplaceService {
           orderBy: { createdAt: 'asc' },
         },
         services: {
-          select: { id: true, price: true },
+          select: { id: true, name: true, price: true },
           orderBy: { price: 'asc' },
-          take: 1,
+          take: 8,
         },
         reviews: {
           select: { rating: true },
         },
         _count: {
-          select: { services: true, staff: true, reviews: true },
+          select: { services: true, staff: true, reviews: true, bookings: true },
         },
       },
       orderBy: { createdAt: 'desc' },
@@ -120,10 +127,12 @@ export class MarketplaceService {
         address: b.locations[0]?.address ?? null,
         timezone: b.locations[0]?.timezone ?? null,
         fromPrice: b.services[0]?.price ?? null,
+        serviceNames: b.services.map((s) => s.name),
         serviceCount: b._count.services,
         staffCount: b._count.staff,
         ratingAvg,
         reviewCount: b._count.reviews,
+        bookingCount: b._count.bookings,
       };
     });
   }
@@ -160,6 +169,7 @@ export class MarketplaceService {
         staff: {
           select: {
             id: true,
+            name: true,
             title: true,
             photoUrl: true,
             locationId: true,
@@ -241,7 +251,7 @@ export class MarketplaceService {
       };
     });
 
-    const timezone = business.locations[0]?.timezone ?? 'Europe/Riga';
+    const timezone = business.locations[0]?.timezone ?? DEFAULT_VENUE_TIMEZONE;
     const openStatus = this.computeOpenStatus(dayMap, timezone);
 
     return {
@@ -275,7 +285,7 @@ export class MarketplaceService {
         const stats = staffRatingMap.get(s.id);
         return {
           staffId: s.id,
-          name: s.user.name,
+          name: staffDisplayName(s),
           title: s.title,
           photoUrl: s.photoUrl,
           locationId: s.locationId,

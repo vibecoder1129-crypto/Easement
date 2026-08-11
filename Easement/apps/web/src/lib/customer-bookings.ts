@@ -10,6 +10,8 @@ export type MyBooking = {
   businessName: string;
   businessCategory: string;
   locationName: string;
+  /** Venue IANA timezone for wall-clock display */
+  timezone?: string;
   serviceId: string;
   serviceName: string;
   staffId: string;

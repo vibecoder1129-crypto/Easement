@@ -6,7 +6,6 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
-import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   AssignStaffToServiceDto,
@@ -17,6 +16,10 @@ import {
   CreateStaffDto,
   CreateTimeOffDto,
 } from './dto/business.dto';
+import {
+  staffDisplayEmail,
+  staffDisplayName,
+} from './staff.util';
 
 @Injectable()
 export class BusinessService {
@@ -55,6 +58,8 @@ export class BusinessService {
             title: true,
             locationId: true,
             userId: true,
+            name: true,
+            email: true,
             user: { select: { name: true, email: true } },
           },
         },
@@ -92,8 +97,8 @@ export class BusinessService {
         title: s.title,
         locationId: s.locationId,
         userId: s.userId,
-        name: s.user.name,
-        email: s.user.email,
+        name: staffDisplayName(s),
+        email: staffDisplayEmail(s),
       })),
       services: b.services.map((s) => ({
         serviceId: s.id,
@@ -146,6 +151,8 @@ export class BusinessService {
             title: true,
             locationId: true,
             userId: true,
+            name: true,
+            email: true,
             user: { select: { name: true, email: true } },
           },
         },
@@ -188,8 +195,8 @@ export class BusinessService {
         title: s.title,
         locationId: s.locationId,
         userId: s.userId,
-        name: s.user.name,
-        email: s.user.email,
+        name: staffDisplayName(s),
+        email: staffDisplayEmail(s),
       })),
       services: business.services.map((s) => ({
         serviceId: s.id,
@@ -254,81 +261,96 @@ export class BusinessService {
       throw new NotFoundException('Location not found for this business');
     }
 
-    let targetUserId = dto.userId;
+    const title = dto.title?.trim() || 'Staff';
+    const trimmedName = dto.name?.trim();
 
-    if (!targetUserId && dto.email && dto.name && dto.password) {
-      const email = dto.email.toLowerCase();
-      const existing = await this.prisma.user.findUnique({ where: { email } });
-      if (existing) {
-        throw new ConflictException(
-          'An account with this email already exists. Use a different email for this employee.',
+    // Onboarding: link the owner as staff when no employee name is provided.
+    if (!trimmedName) {
+      if (dto.userId && dto.userId !== ownerId) {
+        throw new BadRequestException(
+          'Cannot link an existing account by id. Add staff with name and contact info instead.',
         );
       }
 
-      const passwordHash = await bcrypt.hash(dto.password, 12);
-      const employee = await this.prisma.user.create({
+      const user = await this.prisma.user.findUnique({
+        where: { id: ownerId },
+      });
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
+
+      const alreadyOnTeam = await this.prisma.staff.findFirst({
+        where: { businessId, userId: ownerId },
+      });
+      if (alreadyOnTeam) {
+        throw new ConflictException('This person is already on your team');
+      }
+
+      const staff = await this.prisma.staff.create({
         data: {
-          name: dto.name,
-          email,
-          phone: dto.phone,
-          passwordHash,
-          role: UserRole.staff,
+          businessId,
+          locationId: dto.locationId,
+          userId: ownerId,
+          name: user.name,
+          email: user.email,
+          phone: user.phone,
+          title,
         },
       });
-      targetUserId = employee.id;
-    } else if (!targetUserId) {
-      // Legacy path: link owner as staff (onboarding)
-      targetUserId = ownerId;
+
+      await this.seedDefaultAvailability(staff.id);
+
+      return {
+        staffId: staff.id,
+        title: staff.title,
+        locationId: staff.locationId,
+        userId: staff.userId,
+        name: staff.name,
+        email: staff.email,
+        defaultHours: 'Mon-Fri 09:00-17:00',
+      };
     }
 
-    if (dto.email && dto.name && !dto.password && !dto.userId) {
+    if (dto.userId) {
       throw new BadRequestException(
-        'Password is required when creating a new employee account',
+        'Cannot link an existing account when adding a named employee.',
       );
     }
 
-    const user = await this.prisma.user.findUnique({
-      where: { id: targetUserId },
-    });
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-
-    const alreadyOnTeam = await this.prisma.staff.findFirst({
-      where: { businessId, userId: targetUserId },
-    });
-    if (alreadyOnTeam) {
-      throw new ConflictException('This person is already on your team');
-    }
+    const email = dto.email?.trim().toLowerCase() || null;
 
     const staff = await this.prisma.staff.create({
       data: {
         businessId,
         locationId: dto.locationId,
-        userId: targetUserId,
-        title: dto.title,
+        name: trimmedName,
+        email,
+        phone: dto.phone?.trim() || null,
+        title,
       },
-      include: { user: { select: { name: true, email: true } } },
     });
 
-    // Default weekday hours so the calendar has slots immediately
-    const defaultHours = [1, 2, 3, 4, 5].map((dayOfWeek) => ({
-      staffId: staff.id,
-      dayOfWeek,
-      startTime: '09:00',
-      endTime: '17:00',
-    }));
-    await this.prisma.availability.createMany({ data: defaultHours });
+    await this.seedDefaultAvailability(staff.id);
 
     return {
       staffId: staff.id,
       title: staff.title,
       locationId: staff.locationId,
       userId: staff.userId,
-      name: staff.user.name,
-      email: staff.user.email,
+      name: staff.name,
+      email: staff.email,
       defaultHours: 'Mon-Fri 09:00-17:00',
     };
+  }
+
+  private async seedDefaultAvailability(staffId: string) {
+    const defaultHours = [1, 2, 3, 4, 5].map((dayOfWeek) => ({
+      staffId,
+      dayOfWeek,
+      startTime: '09:00',
+      endTime: '17:00',
+    }));
+    await this.prisma.availability.createMany({ data: defaultHours });
   }
   async listStaff(businessId: string, userId: string) {
     await this.assertOwner(businessId, userId);
@@ -344,8 +366,8 @@ export class BusinessService {
       title: s.title,
       locationId: s.locationId,
       userId: s.userId,
-      name: s.user.name,
-      email: s.user.email,
+      name: staffDisplayName(s),
+      email: staffDisplayEmail(s),
     }));
   }
 
@@ -364,6 +386,15 @@ export class BusinessService {
     });
 
     if (dto.staffIds && dto.staffIds.length > 0) {
+      const validStaff = await this.prisma.staff.findMany({
+        where: { businessId, id: { in: dto.staffIds } },
+        select: { id: true },
+      });
+      if (validStaff.length !== dto.staffIds.length) {
+        throw new BadRequestException(
+          'One or more staff members do not belong to this business',
+        );
+      }
       await this.prisma.staffService.createMany({
         data: dto.staffIds.map((staffId) => ({
           serviceId: service.id,
@@ -424,6 +455,15 @@ export class BusinessService {
     });
 
     if (dto.staffIds.length > 0) {
+      const validStaff = await this.prisma.staff.findMany({
+        where: { businessId, id: { in: dto.staffIds } },
+        select: { id: true },
+      });
+      if (validStaff.length !== dto.staffIds.length) {
+        throw new BadRequestException(
+          'One or more staff members do not belong to this business',
+        );
+      }
       await this.prisma.staffService.createMany({
         data: dto.staffIds.map((staffId) => ({
           serviceId,
@@ -486,7 +526,21 @@ export class BusinessService {
     };
   }
 
-  async listStaffAvailability(staffId: string) {
+  async listStaffAvailability(
+    staffId: string,
+    userId: string,
+    role?: string,
+  ) {
+    const staff = await this.prisma.staff.findUnique({
+      where: { id: staffId },
+    });
+    if (!staff) {
+      throw new NotFoundException('Staff member not found');
+    }
+    if (role !== UserRole.admin && staff.userId !== userId) {
+      await this.assertOwner(staff.businessId, userId);
+    }
+
     const availabilities = await this.prisma.availability.findMany({
       where: { staffId },
       orderBy: { dayOfWeek: 'asc' },
@@ -566,7 +620,17 @@ export class BusinessService {
     };
   }
 
-  async listStaffTimeOff(staffId: string) {
+  async listStaffTimeOff(staffId: string, userId: string, role?: string) {
+    const staff = await this.prisma.staff.findUnique({
+      where: { id: staffId },
+    });
+    if (!staff) {
+      throw new NotFoundException('Staff member not found');
+    }
+    if (role !== UserRole.admin && staff.userId !== userId) {
+      await this.assertOwner(staff.businessId, userId);
+    }
+
     const entries = await this.prisma.timeOff.findMany({
       where: { staffId },
       orderBy: { startDatetime: 'asc' },

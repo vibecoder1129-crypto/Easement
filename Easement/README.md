@@ -64,6 +64,14 @@ npm run test:api
 npm run test:e2e
 ```
 
+## Deploy / host
+
+See [docs/DEPLOY.md](docs/DEPLOY.md) for a first public URL (Vercel web + Railway API/Postgres), env checklist, cookie/domain caveats, and Google OAuth redirect setup.
+
+## Web performance
+
+See [docs/PERFORMANCE.md](docs/PERFORMANCE.md) for production vs `next dev`, recent optimizations, and infra follow-ups (CDN, API cache, Redis).
+
 ## Branch
 
 Work happens on `step-1-auth-onboarding`. Do not start Step 2 (services & availability) until Step 1 is confirmed.

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppHeader } from "@/components/AppHeader";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { api } from "@/lib/api";
 
 type Me = {
@@ -33,6 +34,7 @@ export default function SettingsClient() {
 
   const [deletePassword, setDeletePassword] = useState("");
   const [deleting, setDeleting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -107,13 +109,14 @@ export default function SettingsClient() {
 
   async function deleteAccount(e: FormEvent) {
     e.preventDefault();
-    if (
-      !window.confirm(
-        "Delete your account permanently? This cannot be undone.",
-      )
-    ) {
+    if (!deletePassword) {
+      setError("Enter your password to delete the account.");
       return;
     }
+    setConfirmDelete(true);
+  }
+
+  async function runDeleteAccount() {
     setError(null);
     setSuccess(null);
     setDeleting(true);
@@ -122,6 +125,7 @@ export default function SettingsClient() {
         method: "DELETE",
         body: JSON.stringify({ password: deletePassword }),
       });
+      setConfirmDelete(false);
       router.push("/");
       router.refresh();
     } catch (err) {
@@ -129,6 +133,7 @@ export default function SettingsClient() {
         err instanceof Error ? err.message : "Could not delete account",
       );
       setDeleting(false);
+      setConfirmDelete(false);
     }
   }
 
@@ -143,6 +148,19 @@ export default function SettingsClient() {
   return (
     <div className="ease-mesh-pastel min-h-screen text-[var(--ease-text-main)]">
       <AppHeader user={me} />
+      <ConfirmDialog
+        open={confirmDelete}
+        title="Delete account?"
+        message="This permanently removes your account and cannot be undone."
+        confirmLabel="Delete account"
+        cancelLabel="Keep account"
+        danger
+        busy={deleting}
+        onClose={() => {
+          if (!deleting) setConfirmDelete(false);
+        }}
+        onConfirm={() => void runDeleteAccount()}
+      />
       <main className="mx-auto max-w-xl px-4 py-8 sm:px-6">
         <div className="mb-8">
           <Link href="/home" className="text-xs font-semibold text-indigo-600">

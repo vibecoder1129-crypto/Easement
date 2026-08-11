@@ -7,6 +7,7 @@ import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  const isProd = process.env.NODE_ENV === 'production';
 
   const corsOrigin = (
     process.env.CORS_ORIGIN ??
@@ -26,19 +27,20 @@ async function bootstrap() {
         callback(null, true);
         return;
       }
-      // Dev convenience: any localhost port
-      if (/^http:\/\/localhost:\d+$/.test(origin)) {
-        callback(null, true);
-        return;
-      }
-      // Dev convenience: common private LAN hosts (phone / other PC)
-      if (
-        /^http:\/\/(192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}):\d+$/.test(
-          origin,
-        )
-      ) {
-        callback(null, true);
-        return;
+      // Dev-only convenience: any localhost port or private LAN host
+      if (!isProd) {
+        if (/^http:\/\/localhost:\d+$/.test(origin)) {
+          callback(null, true);
+          return;
+        }
+        if (
+          /^http:\/\/(192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}):\d+$/.test(
+            origin,
+          )
+        ) {
+          callback(null, true);
+          return;
+        }
       }
       callback(new Error(`CORS blocked for origin: ${origin}`), false);
     },
@@ -59,6 +61,10 @@ async function bootstrap() {
     throw new Error('SESSION_SECRET environment variable is required');
   }
 
+  const cookieSecure =
+    process.env.COOKIE_SECURE === 'true' ||
+    (isProd && process.env.COOKIE_SECURE !== 'false');
+
   app.use(
     session({
       name: 'ezment.sid',
@@ -68,13 +74,13 @@ async function bootstrap() {
       cookie: {
         httpOnly: true,
         sameSite: 'lax',
-        secure: process.env.COOKIE_SECURE === 'true',
+        secure: cookieSecure,
         maxAge: 1000 * 60 * 60 * 24 * 7,
       },
     }),
   );
 
-  const port = Number(process.env.PORT ?? 3001);
+  const port = Number(process.env.PORT ?? 3003);
   await app.listen(port);
   // eslint-disable-next-line no-console
   console.log(`API listening on http://localhost:${port}`);
